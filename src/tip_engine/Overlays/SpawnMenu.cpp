@@ -257,6 +257,20 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
 
     ImGui::Separator();
 
+    // Texture logging toggle
+    extern std::ofstream g_TextureLog;
+    extern bool g_TextureLogging;
+    if (ImGui::Button(g_TextureLogging ? "Stop Texture Log" : "Start Texture Log", ImVec2(-1, 0))) {
+        g_TextureLogging = !g_TextureLogging;
+        if (g_TextureLogging) {
+            g_TextureLog.open("C:/Users/Administrator/Downloads/texture_log.txt", std::ios::trunc);
+            Log("Texture logging started", 3);
+        } else {
+            g_TextureLog.close();
+            Log("Texture logging stopped — check texture_log.txt", 3);
+        }
+    }
+
     // Scan species button
     if (ImGui::Button("Scan All Species IDs (check log)", ImVec2(-1, 0))) {
         scanRequested = true;

@@ -702,6 +702,53 @@ bool skiplightingTwo_hook() {
 
 // The REAL entity creation function (not the cutscene trigger)
 PPC_EXTERN_IMPORT(sub_82575AB8);
+
+// === Phase 3: Texture init hook ===
+PPC_EXTERN_IMPORT(__imp__rex_dbTextureInitTexture);
+std::ofstream g_TextureLog;
+bool g_TextureLogging = false;
+
+extern "C" PPC_FUNC(rex_dbTextureInitTexture) {
+    uint32_t texAddr = ctx.r3.u32;
+
+    // Log texture init if logging is enabled
+    if (g_TextureLogging && g_TextureLog.is_open()) {
+        uint8_t* mb = rex::Runtime::instance()->memory()->virtual_membase();
+        char buf[512];
+
+        // Dump the first 64 bytes of the dbTexture_s struct to understand its layout
+        snprintf(buf, 512, "TextureInit: PPC 0x%08X | ", texAddr);
+        g_TextureLog << buf;
+
+        // Safe read: only read forward from the texture address
+        if (texAddr >= 0x40000000 && texAddr < 0x8E000000) {
+            // Dump first 32 bytes as hex
+            for (int i = 0; i < 32; i++) {
+                snprintf(buf, 512, "%02X", *(mb + texAddr + i));
+                g_TextureLog << buf;
+                if (i % 4 == 3) g_TextureLog << " ";
+            }
+            g_TextureLog << " | ";
+
+            // Check each 4-byte value as potential pointer to string
+            for (int off = 0; off < 64; off += 4) {
+                uint32_t val = std::byteswap(*(uint32_t*)(mb + texAddr + off));
+                if (val >= 0x82000000 && val < 0x8E000000) {
+                    const char* s = (const char*)(mb + val);
+                    if (s[0] >= 'a' && s[0] <= 'z' && s[1] >= 'a' && strnlen(s, 80) > 3) {
+                        snprintf(buf, 512, "[+%d=\"%.60s\"] ", off, s);
+                        g_TextureLog << buf;
+                    }
+                }
+            }
+        }
+        g_TextureLog << "\n";
+        g_TextureLog.flush();
+    }
+
+    // Call original
+    __imp__rex_dbTextureInitTexture(ctx, base);
+}
 // Encyclopedia species info lookup
 PPC_EXTERN_IMPORT(sub_825357B8);
 // Species tag ID validator - returns type code (0-44 = valid, 46 = invalid)
