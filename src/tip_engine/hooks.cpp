@@ -1060,46 +1060,41 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
         Log("Species scan saved!", 5);
     }
 
-    // Process deferred variant change via eat system
+    // Process deferred variant/trick change
     if (g_DeferredVariantChange.pending && g_DeferredVariantChange.entity != 0) {
-        {
-            std::ofstream dbg("C:/Users/Administrator/Downloads/variant_debug.txt", std::ios::app);
-            dbg << "DEFERRED TRIGGERED! entity=0x" << std::hex << g_DeferredVariantChange.entity
-                << " variant=" << std::dec << g_DeferredVariantChange.variantIndex << std::endl;
-            dbg.close();
-        }
         g_DeferredVariantChange.pending = false;
         uint32_t entityAddr = g_DeferredVariantChange.entity;
         int varIdx = g_DeferredVariantChange.variantIndex;
+        bool isTrick = g_DeferredVariantChange.isTrick;
         uint8_t* mb = rex::Runtime::instance()->memory()->virtual_membase();
 
-        // Read speciesData = entity[2416]
-        uint32_t speciesData = std::byteswap(*(uint32_t*)(mb + entityAddr + 2416));
+        if (isTrick) {
+            // TRICK: use sub_82382328(speciesData, trickIndex, 1)
+            uint32_t speciesData = std::byteswap(*(uint32_t*)(mb + entityAddr + 2416));
+            if (speciesData > 0x40000000 && speciesData < 0x8E000000) {
+                PPCContext varCtx = ctx;
+                varCtx.r3.u64 = speciesData;
+                varCtx.r4.u64 = static_cast<uint32_t>(varIdx);
+                varCtx.r5.u64 = 1;
+                sub_82382328(varCtx, base);
+                Log("Trick " + std::to_string(varIdx) + " applied!", 3);
+            }
+        } else {
+            // COLOR CHANGE: write variant index to entity+3636
+            // then set strategy state to 1093 at entity+2564
+            // This triggers the game's sparkle animation + texture swap
+            PPC_STORE_U32(entityAddr + 3636, std::byteswap(static_cast<uint32_t>(varIdx)));
+            PPC_STORE_U32(entityAddr + 2564, std::byteswap(static_cast<uint32_t>(1093)));
 
-        // Write debug to file
-        {
-            std::ofstream dbg("C:/Users/Administrator/Downloads/variant_debug.txt");
-            if (dbg.is_open()) {
+            {
+                std::ofstream dbg("C:/Users/Administrator/Downloads/variant_debug.txt");
                 char buf[256];
-                snprintf(buf, 256, "entity=0x%08X speciesData=0x%08X variant=%d\n",
-                    entityAddr, speciesData, varIdx);
+                snprintf(buf, 256, "COLOR CHANGE: entity=0x%08X variant=%d at +3636, state=1093 at +2564\n",
+                    entityAddr, varIdx);
                 dbg << buf;
                 dbg.close();
             }
-        }
-
-        if (speciesData > 0x40000000 && speciesData < 0x8E000000) {
-            PPCContext varCtx = ctx;
-
-            // Call sub_82382328(speciesData, variantIndex, 1) — set variant target
-            varCtx.r3.u64 = speciesData;
-            varCtx.r4.u64 = static_cast<uint32_t>(varIdx);
-            varCtx.r5.u64 = 1;
-            sub_82382328(varCtx, base);
-
-            Log("Eat-system variant applied!", 3);
-        } else {
-            Log("Variant failed: invalid speciesData", 5);
+            Log("Color variant " + std::to_string(varIdx) + " triggered!", 3);
         }
     }
 

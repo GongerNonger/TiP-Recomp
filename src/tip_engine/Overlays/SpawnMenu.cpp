@@ -145,16 +145,33 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
 
     if (!canSpawn) ImGui::EndDisabled();
 
-    // Apply variant to last spawned entity (must be mature/resident first!)
-    if (g_LastSpawnedEntity != 0 && variantIndex > 0) {
-        if (ImGui::Button("Apply Variant to Last Spawned", ImVec2(-1, 0))) {
-            g_DeferredVariantChange.entity = g_LastSpawnedEntity;
-            g_DeferredVariantChange.variantIndex = variantIndex;
-            g_DeferredVariantChange.pending = true;
-            Log("Variant " + std::to_string(variantIndex) + " queued for entity", 3);
+    // Apply to last spawned entity (must be mature/resident first!)
+    if (g_LastSpawnedEntity != 0) {
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.4f, 1.0f), "Apply to Last Spawned (wait for maturity!):");
+
+        if (variantIndex > 0) {
+            if (ImGui::Button("Apply Color Change", ImVec2(-1, 0))) {
+                g_DeferredVariantChange.entity = g_LastSpawnedEntity;
+                g_DeferredVariantChange.variantIndex = variantIndex;
+                g_DeferredVariantChange.isTrick = false;
+                g_DeferredVariantChange.pending = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Triggers color variant change (like eating a turnip)\nSets entity+3636 and state 1093 for sparkle+swap");
+            }
         }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Wait until the pinata has matured (cocoon hatched)\nthen click this. Whirlm colors: 3,4,5. Black=15");
+
+        if (variantIndex > 0) {
+            if (ImGui::Button("Apply Trick", ImVec2(-1, 0))) {
+                g_DeferredVariantChange.entity = g_LastSpawnedEntity;
+                g_DeferredVariantChange.variantIndex = variantIndex;
+                g_DeferredVariantChange.isTrick = true;
+                g_DeferredVariantChange.pending = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Triggers trick animation (like eating a buttercup)\n1=Trick1, 2=Trick2");
+            }
         }
     }
 

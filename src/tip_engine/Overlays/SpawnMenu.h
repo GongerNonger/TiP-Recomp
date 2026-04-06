@@ -47,6 +47,7 @@ inline DeferredTextureDump g_DeferredDump;
 struct DeferredVariantChange {
     uint32_t entity = 0;
     int variantIndex = -1;
+    bool isTrick = false;  // false = color change, true = trick
     bool pending = false;
 };
 inline DeferredVariantChange g_DeferredVariantChange;
