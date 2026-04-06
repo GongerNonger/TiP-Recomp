@@ -601,6 +601,11 @@ PPC_EXTERN_IMPORT(sub_825357B8);
 PPC_EXTERN_IMPORT(sub_825A0818);
 // Message dispatch: sends message 260 (set variant/wildcard color)
 PPC_EXTERN_IMPORT(sub_825885B0);
+// Choclodocus color system (from SparseCallback type 0x13 handler)
+PPC_EXTERN_IMPORT(sub_82546C50);  // Find piñata in garden by tag ID
+PPC_EXTERN_IMPORT(sub_82559420);  // Apply dino color (r3=entity, r4=color 0-3)
+PPC_EXTERN_IMPORT(sub_825597C0);  // Pre-color-change setup
+PPC_EXTERN_IMPORT(rex_gardenMainGetGarden_824E10D8); // Get garden data
 // Event dispatch (used for Amber/Wishing Well event 9113)
 PPC_EXTERN_IMPORT(sub_8258ADC8);
 
@@ -654,30 +659,46 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
                     Log("PV Sparse: type=" + std::to_string(cmd.sparseType) +
                         " data=" + std::to_string(cmd.sparseData), 3);
                     if (cmd.sparseType == 0x13) {
-                        // Dino color: write to global AND garden controller
-                        uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
-                        *(membase + 0x83DBECB5) = static_cast<uint8_t>(cmd.sparseData);
-                        // Find garden controller
-                        uint32_t tableBase = 0x83D27000;
-                        for (int si = 0; si < 5; si++) {
-                            uint32_t slotAddr = tableBase + si * 504;
-                            uint32_t state = std::byteswap(*(uint32_t*)(membase + slotAddr + 16));
-                            if (state == 1) {
-                                uint32_t scenePtr = std::byteswap(*(uint32_t*)(membase + slotAddr + 4));
-                                for (int off = 0; off < 504; off += 4) {
-                                    uint32_t ptr = std::byteswap(*(uint32_t*)(membase + slotAddr + off));
-                                    if (ptr > 0x40000000 && ptr < 0xA0000000 && off != 4) {
-                                        uint32_t testScene = std::byteswap(*(uint32_t*)(membase + ptr + 248));
-                                        if (testScene == scenePtr) {
-                                            *(membase + ptr + 4864) = static_cast<uint8_t>(cmd.sparseData);
-                                            *(membase + ptr + 4865) = static_cast<uint8_t>(cmd.sparseData);
-                                            *(membase + ptr + 4866) = static_cast<uint8_t>(cmd.sparseData);
-                                            Log("PV Sparse: garden controller dino color = " + std::to_string(cmd.sparseData), 3);
-                                            break;
-                                        }
-                                    }
+                        // Dino color change! Use the REAL handler chain from the game:
+                        // 1. Get garden → garden[0] to get garden data
+                        // 2. Find Choclodocus (tag 29) via sub_82546C50
+                        // 3. Call sub_825597C0 (pre-color setup)
+                        // 4. Call sub_82559420(entity, color) to apply
+                        uint8_t colorVal = static_cast<uint8_t>(cmd.sparseData);
+                        if (colorVal <= 3) {
+                            ctx = saveInj;
+                            // Step 1: Get garden
+                            rex_gardenMainGetGarden_824E10D8(ctx, base);
+                            uint32_t garden = ctx.r3.u32;
+                            if (garden != 0) {
+                                uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
+                                uint32_t gardenData = std::byteswap(*(uint32_t*)(membase + garden));
+                                // Step 2: Find Choclodocus in garden
+                                ctx = saveInj;
+                                ctx.r3.u64 = gardenData;
+                                ctx.r4.u64 = 0;
+                                ctx.r5.u64 = saveInj.r5.u64; // keep whatever r5 had
+                                ctx.r6.u64 = 29; // Choclodocus tag
+                                ctx.r8.u64 = 0;
+                                ctx.r9.u64 = saveInj.r9.u64;
+                                sub_82546C50(ctx, base);
+                                uint32_t dinoEntity = ctx.r3.u32;
+                                if (dinoEntity != 0) {
+                                    // Step 3: Pre-color setup
+                                    ctx = saveInj;
+                                    ctx.r3.u64 = dinoEntity;
+                                    sub_825597C0(ctx, base);
+                                    // Step 4: Apply color!
+                                    ctx = saveInj;
+                                    ctx.r3.u64 = dinoEntity;
+                                    ctx.r4.u64 = colorVal;
+                                    sub_82559420(ctx, base);
+                                    Log("DINO COLOR APPLIED! Entity=" + std::to_string(dinoEntity) + " color=" + std::to_string(colorVal), 3);
+                                } else {
+                                    Log("PV Sparse: no Choclodocus found in garden", 5);
                                 }
-                                break;
+                            } else {
+                                Log("PV Sparse: no garden found", 5);
                             }
                         }
                     }
