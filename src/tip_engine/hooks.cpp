@@ -594,6 +594,8 @@ bool skiplightingTwo_hook() {
 
 // The REAL entity creation function (not the cutscene trigger)
 PPC_EXTERN_IMPORT(sub_82575AB8);
+// Encyclopedia species info lookup
+PPC_EXTERN_IMPORT(sub_825357B8);
 // Species tag ID validator - returns type code (0-44 = valid, 46 = invalid)
 PPC_EXTERN_IMPORT(sub_825A0818);
 // Message dispatch: sends message 260 (set variant/wildcard color)
@@ -607,6 +609,94 @@ PPC_EXTERN_IMPORT(__imp__rex_gardenMainGetGardenScene_824E1120);
 extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
     // Call the original implementation
     __imp__rex_gardenMainGetGardenScene_824E1120(ctx, base);
+
+    // Process species scan if pending (needs live PPC context)
+    if (g_ScanPending) {
+        g_ScanPending = false;
+        PPCContext scanCtx = ctx;
+
+        std::string outPath = "C:/Users/Administrator/Downloads/species_scan.txt";
+        std::ofstream scanFile(outPath);
+        if (scanFile.is_open()) {
+            scanFile << "=== Species ID Scan (Live Context) ===" << std::endl;
+            uint8_t* mb = rex::Runtime::instance()->memory()->virtual_membase();
+
+            for (uint32_t tagID = 3; tagID <= 168; tagID++) {
+                ctx = scanCtx; // restore clean context each iteration
+                ctx.r3.u64 = tagID;
+                sub_825357B8(ctx, base);
+                uint32_t result = ctx.r3.u32;
+
+                const char* enumNames168[] = {
+                    "","","","ant","beetle","badger","bat","bear","beaver","bee",
+                    "blackbutterfly","bluebottle","bluebutterfly","boomslang",
+                    "brownbutterfly","bushbaby","buzzard","spare90",
+                    "canary","spare89","cat","chameleon","chicken","camel",
+                    "cow","spare87","crocodile","crow","deer","spare86",
+                    "dog","spare85","dragon","dragonfly","duck","spare84",
+                    "eagle","spare83","elephant","firefly","firesalamander","spare81",
+                    "flyingpig","fox","frog","gecko","gerbil","spare80",
+                    "spare79","spare78","spare76","spare75","goose","spare74",
+                    "grasssnake","greenbutterfly","spare73","spare72",
+                    "hedgehog","hippo","horse","hyena","hydra",
+                    "lemming","lemmingpest","spare67","spare66","spare65","spare64",
+                    "lion","spare63","spare62","spare61","mandrill","spare60",
+                    "mole","spare59","monkey","moose","moth","mouse","newt",
+                    "spare57","orangebutterfly","ostrich","spare55","spare54",
+                    "parrot","polarbear","penguin","pig","pigeon","poisonfrog",
+                    "pinkbutterfly","pony","purplebutterfly","rabbit","raccoon",
+                    "spare50","spare49","redbutterfly","spare48","spare47",
+                    "robin","spare45","spare44","salamander","spare43",
+                    "sheep","scorpion","scorpionpest","spare40",
+                    "sparrow","spider","squirrel","spare39","spare38","spare37","spare36",
+                    "swan","spare35","spare34","spare33","spare32","spare31","spare30",
+                    "unicorn","batpest","spare29","vulture","spare27",
+                    "whitebutterfly","spare26","wolf","yeti","worm","yak",
+                    "yellowbutterfly","zebra","slugpest","spare23","spare22",
+                    "spare21","spare20","spare19","spare18",
+                    "crowpest","raccoonpest","crocodilepest","spare17",
+                    "molepest","spare16","spare15","spare14","spare13",
+                    "wolfpest","mandrillpest","spare12","spare11",
+                    "snail","snailpest","graysquirrel","spare3","spare4",
+                    "spare5","spare6","spare7","spare8","spare9"
+                };
+                const char* eName = (tagID < 169) ? enumNames168[tagID] : "???";
+
+                // If result is non-null, try to read data from it
+                std::string info = "NULL";
+                if (result != 0) {
+                    // Try reading a few offsets to find name-like data
+                    info = "PTR=0x";
+                    char hex[16]; snprintf(hex, 16, "%08X", result); info += hex;
+
+                    // Try offset 16 (what encyclopedia uses)
+                    uint32_t v16 = std::byteswap(*(uint32_t*)(mb + result + 16));
+                    snprintf(hex, 16, "%08X", v16); info += " [16]=0x"; info += hex;
+
+                    // Try reading a string at various offsets from the struct
+                    for (int off : {24, 28, 32, 36, 40, 44, 48, 52}) {
+                        uint32_t ptr = std::byteswap(*(uint32_t*)(mb + result + off));
+                        if (ptr > 0x82000000 && ptr < 0x90000000) {
+                            const char* s = (const char*)(mb + ptr);
+                            if (s[0] >= 0x20 && s[0] <= 0x7E && s[1] >= 0x20 && s[1] <= 0x7E) {
+                                char buf[80];
+                                snprintf(buf, 80, " [%d]=\"%.40s\"", off, s);
+                                info += buf;
+                            }
+                        }
+                    }
+                }
+
+                scanFile << tagID << " | " << eName << " | " << info << std::endl;
+            }
+            scanFile << "=== Scan complete ===" << std::endl;
+            scanFile.close();
+        }
+
+        ctx = scanCtx; // restore context
+        ctx.r3.u32 = ctx.r3.u32; // keep gardenScene
+        Log("Species scan saved!", 5);
+    }
 
     // Check for pending spawn request
     if (!g_SpawnRequest.pending) return;
@@ -690,6 +780,10 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
 // sub_825A0878 converts typeCode back to tagID
 
 PPC_EXTERN_IMPORT(sub_825A0878);
+// Asset ID builder - takes (r3=tagID, r4=outputBuffer) and produces asset path string
+PPC_EXTERN_IMPORT(sub_8254C018);
+// Encyclopedia species info lookup - returns species data ptr or 0 if invalid
+PPC_EXTERN_IMPORT(sub_825357B8);
 
 void scanSpeciesIDs() {
     // Map tag IDs to their enum names from supportPinataTag_e
@@ -732,13 +826,63 @@ void scanSpeciesIDs() {
     std::ofstream outFile(outPath);
     if (!outFile.is_open()) return;
 
-    outFile << "=== Species ID Scan (Enum Names) ===" << std::endl;
-    outFile << "ID | EnumName | CurrentListName | VPName (known)" << std::endl;
-    outFile << "---+----------+----------------+----------------" << std::endl;
+    outFile << "=== Species ID Scan (Encyclopedia Method) ===" << std::endl;
+    outFile << "ID | EnumName | Encyclopedia | NameData | CurrentListName" << std::endl;
+    outFile << "---+----------+-------------+----------+----------------" << std::endl;
+
+    uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
 
     for (uint32_t tagID = 3; tagID <= 170; tagID++) {
         const char* enumName = (tagID < sizeof(enumNames)/sizeof(enumNames[0]))
             ? enumNames[tagID] : "???";
+
+        // Call sub_825357B8 - the encyclopedia's species info lookup
+        uint32_t speciesInfo = rex::GuestToHostFunction<uint32_t>(sub_825357B8, tagID);
+
+        // Try to read name data from the species info struct
+        char nameData[256] = "N/A";
+        if (speciesInfo != 0) {
+            // Try reading strings/pointers from various offsets of the species info struct
+            // The struct has useful data at offsets 0, 4, 8, 12, 16, 20, etc.
+            std::string offsets = "";
+            for (int off = 0; off <= 32; off += 4) {
+                uint32_t val = std::byteswap(*(uint32_t*)(membase + speciesInfo + off));
+                offsets += "+" + std::to_string(off) + "=0x" + std::to_string(val) + " ";
+            }
+            // Try offset 16 (used by encyclopedia to pass to sub_82537CF0)
+            uint32_t nameRef = std::byteswap(*(uint32_t*)(membase + speciesInfo + 16));
+            if (nameRef > 0x82000000 && nameRef < 0x90000000) {
+                // Might be a pointer to a string or another struct
+                const char* maybeStr = (const char*)(membase + nameRef);
+                // Check if it looks like printable ASCII
+                bool isStr = true;
+                for (int i = 0; i < 4; i++) {
+                    if (maybeStr[i] < 0x20 || maybeStr[i] > 0x7E) { isStr = false; break; }
+                }
+                if (isStr) {
+                    snprintf(nameData, 255, "str@16=\"%.64s\"", maybeStr);
+                } else {
+                    // Try reading as a pointer chain: nameRef -> string
+                    uint32_t namePtr2 = std::byteswap(*(uint32_t*)(membase + nameRef));
+                    if (namePtr2 > 0x82000000 && namePtr2 < 0x90000000) {
+                        const char* maybeStr2 = (const char*)(membase + namePtr2);
+                        bool isStr2 = true;
+                        for (int i = 0; i < 4; i++) {
+                            if (maybeStr2[i] < 0x20 || maybeStr2[i] > 0x7E) { isStr2 = false; break; }
+                        }
+                        if (isStr2) {
+                            snprintf(nameData, 255, "str@16->=\"%.64s\"", maybeStr2);
+                        } else {
+                            snprintf(nameData, 255, "ptr@16=0x%08X->0x%08X", nameRef, namePtr2);
+                        }
+                    } else {
+                        snprintf(nameData, 255, "val@16=0x%08X", nameRef);
+                    }
+                }
+            } else {
+                snprintf(nameData, 255, "val@16=0x%08X", nameRef);
+            }
+        }
 
         // Find current list entry
         const char* listName = "(not in list)";
@@ -746,16 +890,9 @@ void scanSpeciesIDs() {
             if (entry.ID == tagID) { listName = entry.Name; break; }
         }
 
-        // Known VP name mappings (from confirmed entries)
-        const char* vpName = "";
-        // These are CONFIRMED mappings from g_PinataIDs
-        if (strstr(enumName, "spare") != nullptr) {
-            vpName = "<<< TiP EXCLUSIVE - NEEDS IDENTIFICATION >>>";
-        }
-
-        outFile << tagID << " | " << enumName << " | " << listName;
-        if (vpName[0]) outFile << " | " << vpName;
-        outFile << std::endl;
+        outFile << tagID << " | " << enumName << " | "
+                << (speciesInfo != 0 ? "VALID" : "INVALID") << " | "
+                << nameData << " | " << listName << std::endl;
     }
 
     // Also list all TiP exclusive species we need to identify

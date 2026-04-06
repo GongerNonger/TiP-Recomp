@@ -126,10 +126,9 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
 
     ImGui::End();
 
-    // Process scan request outside of the UI (needs PPC context)
+    // Queue scan to run from the game logic hook (needs live PPC context)
     if (scanRequested) {
         scanRequested = false;
-        extern void scanSpeciesIDs();
-        scanSpeciesIDs();
+        ::g_ScanPending = true;
     }
 }

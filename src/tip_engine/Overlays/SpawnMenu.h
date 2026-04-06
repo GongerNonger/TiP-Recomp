@@ -17,6 +17,7 @@ struct SpawnRequest {
 inline SpawnRequest g_SpawnRequest;
 inline bool g_SpawnMenuOpen = false;
 inline uint32_t g_LastSpawnedEntity = 0; // PPC address of last spawned entity
+inline bool g_ScanPending = false;
 
 // Deferred variant application (needs to wait a frame for entity to initialize)
 struct DeferredVariant {
