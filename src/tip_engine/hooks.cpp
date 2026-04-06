@@ -659,46 +659,78 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
                     Log("PV Sparse: type=" + std::to_string(cmd.sparseType) +
                         " data=" + std::to_string(cmd.sparseData), 3);
                     if (cmd.sparseType == 0x13) {
-                        // Dino color change! Use the REAL handler chain from the game:
-                        // 1. Get garden → garden[0] to get garden data
-                        // 2. Find Choclodocus (tag 29) via sub_82546C50
-                        // 3. Call sub_825597C0 (pre-color setup)
-                        // 4. Call sub_82559420(entity, color) to apply
+                        // Dino color change — replicate EXACT game code from loc_8264A438
                         uint8_t colorVal = static_cast<uint8_t>(cmd.sparseData);
                         if (colorVal <= 3) {
+                            uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
+
+                            // Step 1: Get garden (exact replica of game code)
                             ctx = saveInj;
-                            // Step 1: Get garden
                             rex_gardenMainGetGarden_824E10D8(ctx, base);
-                            uint32_t garden = ctx.r3.u32;
-                            if (garden != 0) {
-                                uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
-                                uint32_t gardenData = std::byteswap(*(uint32_t*)(membase + garden));
-                                // Step 2: Find Choclodocus in garden
+                            uint32_t gardenPtr = ctx.r3.u32;
+
+                            if (gardenPtr != 0) {
+                                // lwz r3,0(r3) — dereference garden to get data
+                                uint32_t gardenData = std::byteswap(*(uint32_t*)(membase + gardenPtr));
+
+                                // Step 2: Find Choclodocus — replicate exact game lis/addi math
+                                // lis r8,-32241 → r8.s64 = -2112946176; addi r5,r8,-18592
+                                // lis r10,-32242 → r10.s64 = -2113011712; addi r9,r10,-24436
+                                // lis r11,-32234 → r11.s64 = -2112487424; lfs f1,r11-14556
+                                int64_t r8val = -2112946176LL;
+                                int64_t r10val = -2113011712LL;
+                                int64_t r11val = -2112487424LL;
+                                uint32_t r5addr = static_cast<uint32_t>(r8val + (-18592));
+                                uint32_t r9addr = static_cast<uint32_t>(r10val + (-24436));
+                                uint32_t f1addr = static_cast<uint32_t>(r11val + (-14556));
+
                                 ctx = saveInj;
                                 ctx.r3.u64 = gardenData;
                                 ctx.r4.u64 = 0;
-                                ctx.r5.u64 = saveInj.r5.u64; // keep whatever r5 had
-                                ctx.r6.u64 = 29; // Choclodocus tag
+                                ctx.r5.u64 = r5addr;
+                                ctx.r6.u64 = 29;          // Choclodocus tag
                                 ctx.r8.u64 = 0;
-                                ctx.r9.u64 = saveInj.r9.u64;
+                                ctx.r9.u64 = r9addr;
+                                // Load f1 float from PPC memory
+                                uint32_t f1raw = std::byteswap(*(uint32_t*)(membase + f1addr));
+                                float f1val;
+                                memcpy(&f1val, &f1raw, 4);
+                                ctx.f1.f64 = double(f1val);
+
                                 sub_82546C50(ctx, base);
                                 uint32_t dinoEntity = ctx.r3.u32;
+
+                                // Write debug to file
+                                {
+                                    std::ofstream dbg("C:/Users/Administrator/Downloads/dino_color_debug.txt");
+                                    if (dbg.is_open()) {
+                                        char buf[512];
+                                        snprintf(buf, 512, "gardenPtr=0x%08X gardenData=0x%08X dinoEntity=0x%08X color=%d\nr5=0x%08X r9=0x%08X f1addr=0x%08X f1val=%f",
+                                            gardenPtr, gardenData, dinoEntity, colorVal,
+                                            r5addr, r9addr, f1addr, f1val);
+                                        dbg << buf << std::endl;
+                                        dbg.close();
+                                    }
+                                }
+
                                 if (dinoEntity != 0) {
                                     // Step 3: Pre-color setup
                                     ctx = saveInj;
                                     ctx.r3.u64 = dinoEntity;
                                     sub_825597C0(ctx, base);
+
                                     // Step 4: Apply color!
                                     ctx = saveInj;
                                     ctx.r3.u64 = dinoEntity;
                                     ctx.r4.u64 = colorVal;
                                     sub_82559420(ctx, base);
-                                    Log("DINO COLOR APPLIED! Entity=" + std::to_string(dinoEntity) + " color=" + std::to_string(colorVal), 3);
+
+                                    Log("DINO COLOR APPLIED! color=" + std::to_string(colorVal), 3);
                                 } else {
-                                    Log("PV Sparse: no Choclodocus found in garden", 5);
+                                    Log("PV Sparse: no Choclodocus found in garden!", 5);
                                 }
                             } else {
-                                Log("PV Sparse: no garden found", 5);
+                                Log("PV Sparse: no garden!", 5);
                             }
                         }
                     }
