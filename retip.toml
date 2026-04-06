@@ -1,0 +1,6 @@
+# Auto-generated cvar configuration
+log_level = "off"
+scribble_heap = true
+vsync = false
+readback_memexport = false
+readback_memexport_fast = false

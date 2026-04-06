@@ -14,9 +14,12 @@
 #include "tip_engine/Log.h"
 #include "tip_engine/D3DTypes.h"
 #include "Overlays/DebugInfo.h"
+#include "Webcam.h"
 
 #include "rex_macros.h"
 #include <fstream>
+#include <chrono>
+#include <thread>
 #include "tip_engine/Types/CommonTypes.h"
 
 inline float to_byteswapped_float(float f) {
@@ -29,7 +32,6 @@ inline double to_byteswapped_double(double d) {
     return *reinterpret_cast<double*>(&i);
 }
 
-REXCVAR_DEFINE_BOOL(show_fps_overlay, false, "_Trouble in Paradise", "Show FPS overlay");
 REXCVAR_DEFINE_BOOL(rgb_cursor, false, "_Trouble in Paradise", "Enables the Gursor");
 REXCVAR_DEFINE_BOOL(lock_fps, false, "_Trouble in Paradise", "Lock to 30 FPS");
 REXCVAR_DEFINE_BOOL(DisableMainDraw, false, "_Trouble in Paradise", "Disables the Main Draw Pass");
@@ -39,56 +41,22 @@ REXCVAR_DEFINE_BOOL(UseAspectRatioFromConfig, false, "_Trouble in Paradise", "Us
 REXCVAR_DEFINE_DOUBLE(AspectRatio, 1.7777778f, "_Trouble in Paradise", "Aspect Ratio");
 
 
+REXCVAR_DEFINE_COLOR(ambientColor, 0x000000FF, "_Trouble in Paradise", "Controls the ambient color of the scene");
+REXCVAR_DEFINE_COLOR(ambientModelColor, 0x000000FF, "_Trouble in Paradise", "Controls the ambient color of the models in the scene");
+REXCVAR_DEFINE_COLOR(directionalColor, 0xFFFFFFFF, "_Trouble in Paradise", "Controls the color of the directional light in the scene");
+REXCVAR_DEFINE_COLOR(fogColor, 0x000000FF, "_Trouble in Paradise", "Controls the color of the fog in the scene");
+REXCVAR_DEFINE_DOUBLE(fogOpacity, 1.0f, "_Trouble in Paradise", "Controls the opacity of the fog in the scene");
+REXCVAR_DEFINE_DOUBLE(blueShiftScalar, 0.0f, "_Trouble in Paradise", "Controls the intensity of the blue shift effect in the scene");
+REXCVAR_DEFINE_BOOL(cubeFogEnabled, false, "_Trouble in Paradise", "Enables cube fog in the scene");
+
+REXCVAR_DEFINE_INT32(maxCPU, 60, "_Trouble in Paradise", "Limits the cpu FPS to the specified value (0 for unlimited)");
+REXCVAR_DEFINE_INT32(maxGPU, 60, "_Trouble in Paradise", "Limits the gpu FPS to the specified value (0 for unlimited)");
+
+
+
 REX_PPC_EXTERN_IMPORT(camMainGetPos_821F07E0);
 
 float * camMainGetPos_821F07E0_Hook(float *result){
-  /*
-  if(REXCVAR_GET(Freecam)) {
-    result[0] = to_byteswapped_float(static_cast<float>(REXCVAR_GET(Freecam_X)));
-    result[1] = to_byteswapped_float(static_cast<float>(REXCVAR_GET(Freecam_Y)));
-    result[2] = to_byteswapped_float(static_cast<float>(REXCVAR_GET(Freecam_Z)));
-
-    //.data:82C34E98 Me_36.virtCam
-    uintptr_t virtCam = reinterpret_cast<uintptr_t>(0x100000000ull + 0x82C34E98);
-    *(float *)(virtCam + 8) = result[0];
-    *(float *)(virtCam + 12) = result[1];
-    *(float *)(virtCam + 16) = result[2];
-    DebugLogFloat("Freecam X", static_cast<float>(REXCVAR_GET(Freecam_X)));
-    DebugLogFloat("Freecam Y", static_cast<float>(REXCVAR_GET(Freecam_Y)));
-    DebugLogFloat("Freecam Z", static_cast<float>(REXCVAR_GET(Freecam_Z)));
-
-    if((float *)(virtCam + 8) != nullptr) {
-        DebugLogFloat("CamMainGetPos X", *(float *)(virtCam + 8));
-    }
-    if((float *)(virtCam + 12) != nullptr) {
-        DebugLogFloat("CamMainGetPos Y", *(float *)(virtCam + 12));
-    }
-    if((float *)(virtCam + 16) != nullptr) {
-        DebugLogFloat("CamMainGetPos Z", *(float *)(virtCam + 16));
-    }
-
-    return result;
-  }else{
-    //.data:82C34E98 Me_36.virtCam
-    uintptr_t virtCam = reinterpret_cast<uintptr_t>(0x100000000ull + 0x82C34E98);
-    //*(float *)(virtCam + 8) = result[0];
-    //*(float *)(virtCam + 12) = result[1];
-    //*(float *)(virtCam + 16) = result[2];
-    DebugLogFloat("Freecam X", static_cast<float>(REXCVAR_GET(Freecam_X)));
-    DebugLogFloat("Freecam Y", static_cast<float>(REXCVAR_GET(Freecam_Y)));
-    DebugLogFloat("Freecam Z", static_cast<float>(REXCVAR_GET(Freecam_Z)));
-    if((float *)(virtCam + 8) != nullptr) {
-        DebugLogFloat("CamMainGetPos X", *(float *)(virtCam + 8));
-    }
-    if((float *)(virtCam + 12) != nullptr) {
-        DebugLogFloat("CamMainGetPos Y", *(float *)(virtCam + 12));
-    }
-    if((float *)(virtCam + 16) != nullptr) {
-        DebugLogFloat("CamMainGetPos Z", *(float *)(virtCam + 16));
-    }
-    return rex ::GuestToHostFunction<float *>(__imp__rex_camMainGetPos_821F07E0, result);
-  }
-    */
   return rex ::GuestToHostFunction<float *>(__imp__rex_camMainGetPos_821F07E0, result);
 }
 
@@ -111,114 +79,74 @@ float camMainGetAspectRatio_821F0730_Hook() {
 REX_PPC_HOOK(camMainGetAspectRatio_821F0730);
 
 
-auto frameTime=std::chrono::system_clock::now();
-int frame = 0;
-double fpsHistory[10] = {};
-int fpsHistoryIndex = 0;
-int fpsHistoryCount = 0;
-
-void fps_hook() {
-  frame++;
-  auto Time = std::chrono::system_clock::now();
-  std::chrono::duration<double, std::milli> delta = Time - frameTime;
-  frameTime = Time;
-  double fpsfromMS = 1000 / delta.count();
-  if (frame >= 2) {
-    frame = 0;
-    fpsHistory[fpsHistoryIndex] = fpsfromMS;
-    fpsHistoryIndex = (fpsHistoryIndex + 1) % 10;
-    if (fpsHistoryCount < 10) fpsHistoryCount++;
-
-    double sum = 0.0;
-    for (int i = 0; i < fpsHistoryCount; i++) sum += fpsHistory[i];
-    fpsCount = sum / fpsHistoryCount;
-  }
-
-  showfps = REXCVAR_GET(show_fps_overlay);
-
-  /*
-  lightMainWorkspace_s* workspace = reinterpret_cast<lightMainWorkspace_s*>(0x100000000ull + 0x82C3C010);
-  workspace->dirLight.col = {
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(directionalColor) >> 24) & 0xFF) / 255.0f),
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(directionalColor) >> 16) & 0xFF) / 255.0f),
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(directionalColor) >> 8) & 0xFF) / 255.0f),
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(directionalColor)) & 0xFF) / 255.0f)
-  };
-   workspace->ambientCol = {
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(ambientColor) >> 24) & 0xFF) / 255.0f),
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(ambientColor) >> 16) & 0xFF) / 255.0f),
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(ambientColor) >> 8) & 0xFF) / 255.0f),
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(ambientColor)) & 0xFF) / 255.0f)
-  };
-   workspace->modelAmbientCol = {
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(ambientModelColor) >> 24) & 0xFF) / 255.0f),
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(ambientModelColor) >> 16) & 0xFF) / 255.0f),
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(ambientModelColor) >> 8) & 0xFF) / 255.0f),
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(ambientModelColor)) & 0xFF) / 255.0f)
-  };
-
-  workspace->fogCol = {
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(fogColor) >> 24) & 0xFF) / 255.0f),
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(fogColor) >> 16) & 0xFF) / 255.0f),
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(fogColor) >> 8) & 0xFF) / 255.0f),
-      to_byteswapped_float(static_cast<float>((REXCVAR_GET(fogColor)) & 0xFF) / 255.0f)
-  };
-  workspace->fogOpacity = to_byteswapped_float(static_cast<float>(REXCVAR_GET(fogOpacity)));
-  workspace->blueShiftScalar = to_byteswapped_float(static_cast<float>(REXCVAR_GET(blueShiftScalar)));
-  workspace->cubeFogEnabled = REXCVAR_GET(cubeFogEnabled) ? 1 : 0;
-  */
+void CPU_fps_hook() {
+  auto fpshook = fpsManager.GetCreateCounter("CPU");
+  fpshook->Tick();
 }
 
-bool PresentParams_hook(PPCRegister& r11) {
-  //r11.u32 is a * to a _D3DPRESENT_PARAMETERS_ struct
-  if(r11.u32 == 0) {
-    return false;
-  }
-  _D3DPRESENT_PARAMETERS_* params = reinterpret_cast<_D3DPRESENT_PARAMETERS_*>(0x100000000ull + r11.u32);
-
-  
-  auto bs = [](uint32_t v) { return std::byteswap(v); };
-  auto bsi = [](int v) { return static_cast<int>(std::byteswap(static_cast<uint32_t>(v))); };
-
-  params->FullScreen_RefreshRateInHz = bs(164);
-  params->PresentationInterval = bs(0); // D3DPRESENT_INTERVAL_ONE
-  if(REXCVAR_GET(lock_fps)) {
-    params->PresentationInterval = bs(2); // D3DPRESENT_INTERVAL_TWO
-  }
-
-  //params->BackBufferHeight = bs(1080);
-  //params->BackBufferWidth = bs(1920);
-  return false;
+void GPU_fps_hook() {
+  auto fpshook = fpsManager.GetCreateCounter("GPU");
+  fpshook->Tick();
 }
 
-void PresentParams2_hook(PPCRegister& r3){
-   // Guest memory is big-endian (PPC), byte-swap each 32-bit field for host (x86)
-  auto bs = [](uint32_t v) { return std::byteswap(v); };
-  auto bsi = [](int v) { return static_cast<int>(std::byteswap(static_cast<uint32_t>(v))); };
+PPC_EXTERN_IMPORT(__imp__rex_appMainTickPreDraw_821C91C0);
+PPC_EXTERN_IMPORT(__imp__rex_appMainDraw_821C8E78);
+void MainLoop_hook() {
+  using clock = std::chrono::steady_clock;
 
-  //r3 is a * to video parameters struct
-  if(r3.u32 == 0) {
-    return;
+  auto last_cpu_tick = clock::now();
+  auto last_gpu_draw = clock::now();
+  auto cpu_accumulator = clock::duration::zero();
+
+  int Run = 1;
+  while (Run) {
+    auto now = clock::now();
+
+    // CPU tick rate from cvar (0 = unlimited)
+    int32_t cpuLimit = REXCVAR_GET(maxCPU);
+    if (cpuLimit > 0) {
+      auto cpu_interval = std::chrono::duration_cast<clock::duration>(
+          std::chrono::duration<double>(1.0 / cpuLimit));
+      cpu_accumulator += now - last_cpu_tick;
+      last_cpu_tick = now;
+
+      while (cpu_accumulator >= cpu_interval) {
+        Run = rex ::GuestToHostFunction<int>(__imp__rex_appMainTickPreDraw_821C91C0);
+        TriggerReadCallback();
+        cpu_accumulator -= cpu_interval;
+        if (!Run) break;
+      }
+    } else {
+      Run = rex ::GuestToHostFunction<int>(__imp__rex_appMainTickPreDraw_821C91C0);
+      TriggerReadCallback();
+    }
+
+    // GPU draw rate from cvar (0 = unlimited)
+    if (Run) {
+      int32_t gpuLimit = REXCVAR_GET(maxGPU);
+      if (gpuLimit > 0) {
+        auto gpu_interval = std::chrono::duration_cast<clock::duration>(
+            std::chrono::duration<double>(1.0 / gpuLimit));
+        auto gpu_elapsed = now - last_gpu_draw;
+        if (gpu_elapsed >= gpu_interval) {
+          rex ::GuestToHostFunction<void>(__imp__rex_appMainDraw_821C8E78);
+          last_gpu_draw = now;
+        }
+      } else {
+        rex ::GuestToHostFunction<void>(__imp__rex_appMainDraw_821C8E78);
+      }
+    }
+
+    if (cpuLimit > 0 || REXCVAR_GET(maxGPU) > 0) {
+      std::this_thread::yield();
+    }
   }
-  videoParams_s* params = reinterpret_cast<videoParams_s*>(0x100000000ull + r3.u32);
-  params->resolutionType = bs(2);
-  //params->width = bs(1920);
-  //params->height = bs(1080);
-  params->refreshRateHZ = bs(164);
-  params->presentInterval = bs(0); // D3DPRESENT_INTERVAL_ONE
-  if(REXCVAR_GET(lock_fps)) {
-    params->presentInterval = bs(2); // D3DPRESENT_INTERVAL_TWO
-  }
-  params->presentImmediately = bs(1); // TRUE
 }
-
 
 void vsync_hook(PPCRegister& r10) {
   if(!REXCVAR_GET(lock_fps)) {
     r10.u32 = 0; // Force vsync off
   }
-
-  
 }
 
 bool Space1_hook() {
@@ -383,80 +311,6 @@ void CursorColor_hook(PPCRegister& r31, PPCRegister& r27)
     *colorPtr = std::byteswap(rgba);
 }
 
-/* 12001 */
-struct gardenBudgetUnit_sl
-{
-  unsigned int virtualMemory;
-  unsigned int physicalMemory;
-  unsigned int dualShadowBuffering;
-  unsigned int cubeShadowBuffering;
-  unsigned int regularShadowBuffering;
-  unsigned int diggableSurfacePreDraw;
-  unsigned int mainPassOpaque;
-  unsigned int mainPassTransparent;
-};
-
-/* 12002 */
-struct gardenBudgetClassUnit_sl
-{
-  unsigned int classLimit[45];
-};
-
-
-void tagUnitsBudget_hook() {
-  // Set the budget for each unit class to 9999 (0x270F in hex)
-  uint32_t& limit = *reinterpret_cast<uint32_t*>(0x100000000 + 0x83A5A8EC + 56);
-  uint32_t& limit2 = *reinterpret_cast<uint32_t*>(0x100000000 + 0x83A5A8EC + 56 + 4);
-  //83A5A8A8
-
-  limit = std::byteswap(999999);
-  limit2 = std::byteswap(999999);
-
-  for (int i = 0; i < 2; i++) {
-    //*reinterpret_cast<uint32_t*>(classLimitPtr + i * 4) = std::byteswap(0);
-  }
-  DebugLogInt32("BudgetHook", limit);
-
-
-}
-
-void tagClassUnitsBudget_hook(PPCRegister& r3) {
-  //r3.u32 = the ptr to the gardenBudgetClassUnit_sl struct
-  if(r3.u32 == 0) {
-    return;
-  }
-  uint32_t* budgetPtr = reinterpret_cast<uint32_t*>(0x100000000 + r3.u32);
-  for (int i = 0; i < 2260; i++) {
-    budgetPtr[i] = std::byteswap(999);
-  }
-}
-
-bool meUpdateOccupancyLevels_hook(PPCRegister& fp0){
-  uint32_t& limit1 = *reinterpret_cast<uint32_t*>(0x100000000 + 0x83A5A8A8 + 64);
-  uint32_t& limit2 = *reinterpret_cast<uint32_t*>(0x100000000 + 0x83A5A8A8 + 96);
-  uint32_t& limit3 = *reinterpret_cast<uint32_t*>(0x100000000 + 0x83A5A8A8 + 132);
-  uint32_t& limit4 = *reinterpret_cast<uint32_t*>(0x100000000 + 0x83A5A8A8 + 100);
-  
-  limit1 = std::byteswap(999999);
-  limit2 = std::byteswap(999999);
-  limit3 = std::byteswap(999999);
-  limit4 = std::byteswap(999999);
-
-  gardenBudgetUnit_sl* limits1 = reinterpret_cast<gardenBudgetUnit_sl*>(0x100000000 + 0x83A5A8A8 + 0);
-  limits1->virtualMemory = std::byteswap(1282527612);
-  limits1->physicalMemory = std::byteswap(1282527612);
-  gardenBudgetUnit_sl* limits2 = reinterpret_cast<gardenBudgetUnit_sl*>(0x100000000 + 0x83A5A8A8 + 32);
-  limits2->virtualMemory = std::byteswap(1282527612);
-  limits2->physicalMemory = std::byteswap(1282527612);
-  gardenBudgetUnit_sl* limits3 = reinterpret_cast<gardenBudgetUnit_sl*>(0x100000000 + 0x83A5A8A8 + 64);
-  gardenBudgetUnit_sl* limits4 = reinterpret_cast<gardenBudgetUnit_sl*>(0x100000000 + 0x83A5A8A8 + 128);
-  limits4->virtualMemory = std::byteswap(1282527612);
-  limits4->physicalMemory = std::byteswap(1282527612);
-  uint32_t& limit7 = *reinterpret_cast<uint32_t*>(0x100000000ull + 0x83A5A8A8ull + 28028);
-  limit7 = 0x0000803F;
-  return true;
-}
-
 bool skip_entityAvatarPinataSeedBigBrotherSaysYes_hook() {
   return true; // Always branch to loc_824DDA84
 }
@@ -475,72 +329,6 @@ bool skipFirstDraw_hook(){
 
 bool skipSecondDraw_hook(){
   return REXCVAR_GET(DisableUIDraw);
-}
-
-void skipRenderState0_hook(PPCRegister& r10){
-  return;
-  /*
-  if(REXCVAR_GET(SkipShadowPass_One)){
-    r10.u32 = 0; // Set shadow count to 0 to skip shadow pass
-  }else{
-    r10.u32 = 1;
-  }
-    */
-}
-
-void skipRenderState1_hook(PPCRegister& r9){
-  return;
-  /*
-  if(REXCVAR_GET(SkipShadowPass_Two)){
-    r9.u32 = 0; // Set shadow count to 0 to skip shadow pass
-  }else{
-    r9.u32 = 1;
-  }
-    */
-}
-
-void skipRenderState2_hook(PPCRegister& r9){
-  return;
-  /*
-  if(REXCVAR_GET(SkipShadowPass_Three)){
-    r9.u32 = 0; // Set shadow count to 0 to skip shadow pass
-  }else{
-    r9.u32 = 1;
-  }
-    */
-}
-
-void skipRenderState3_hook(PPCRegister& r9){
-  return;
-  /*
-  if(REXCVAR_GET(SkipOpaquePass)){
-    r9.u32 = 0; // Set shadow count to 0 to skip shadow pass
-  }else{
-    r9.u32 = 1;
-  }
-    */
-}
-
-void skipRenderState4_hook(PPCRegister& r9){
-  return;
-  /*
-  if(REXCVAR_GET(SkipAlphaPass)){
-    r9.u32 = 0; // Set shadow count to 0 to skip shadow pass
-  }else{
-    r9.u32 = 1;
-  }
-    */
-}
-
-void skipRenderState5_hook(PPCRegister& r9){
-  return;
-  /*
-  if(REXCVAR_GET(SkipPostProcessPass)){
-    r9.u32 = 0; // Set shadow count to 0 to skip shadow pass
-  }else{
-    r9.u32 = 1;
-  }
-    */
 }
 
 bool skiplighting_hook() {

@@ -3,6 +3,9 @@ setlocal
 
 cd /d "%~dp0.."
 
+echo Closing retip.exe if running...
+taskkill /f /im retip.exe >nul 2>&1
+
 echo Copying retip.exe and DLLs to the batch file's directory...
 copy /y "out\build\win-amd64-relwithdebinfo\retip.exe" .
 copy /y "out\build\win-amd64-relwithdebinfo\*.dll" .

@@ -29,3 +29,8 @@ int gardenBudgetGetIsTagAvailable_824DC840_Hook(unsigned int tag, int *tagClass)
 REX_PPC_HOOK(gardenBudgetGetIsTagAvailable_824DC840);
 
 
+//int __fastcall rex_threadSpinLockLock_8228D848(int a1)
+//PPC_STUB(__imp__rex_threadSpinLockLock_8228D848)
+
+//void __fastcall rex_threadSpinLockUnlock_82224020(int a1, int a2, int a3)
+//PPC_STUB(__imp__rex_threadSpinLockUnlock_82224020)
