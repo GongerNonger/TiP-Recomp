@@ -60,6 +60,16 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
         ImGui::SetTooltip("Set color variant. -1=Default, 0+=Wildcard variants.\nTry different values to discover hidden colors!");
     }
 
+    // Wildcard Trait (separate from color variant)
+    static int wildcardTrait = 0;
+    ImGui::Text("Wildcard:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1);
+    ImGui::SliderInt("##wildcard", &wildcardTrait, 0, 3, wildcardTrait == 0 ? "None" : "Trait %d");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Wildcard body traits (fangs, mane, etc.)\n0=None, 1-3=Different wildcard features\nSeparate from color variant — can combine both!");
+    }
+
     // Dino Color (Choclodocus/Dragonache special color)
     static int dinoColor = -1;
     static const char* dinoColorNames[] = {"Default", "Blue", "Green", "Red", "Elite Neon"};
@@ -126,6 +136,7 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
     if (ImGui::Button("Spawn Selected", ImVec2(-1, 0))) {
         g_SpawnRequest.tagID = g_PinataIDs[selectedIndex].ID;
         g_SpawnRequest.variantIndex = variantIndex;
+        g_SpawnRequest.wildcardTrait = wildcardTrait;
         g_SpawnRequest.dinoColor = dinoColor;
         g_SpawnRequest.pending = true;
         Log("Spawn requested: " + std::string(g_PinataIDs[selectedIndex].Name)

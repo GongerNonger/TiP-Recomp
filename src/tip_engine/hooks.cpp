@@ -1083,6 +1083,7 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
 
     uint32_t tagID = g_SpawnRequest.tagID;
     int variantIndex = g_SpawnRequest.variantIndex;
+    int wildcardTrait = g_SpawnRequest.wildcardTrait;
     int dinoColor = g_SpawnRequest.dinoColor;
     g_SpawnRequest.pending = false;
 
@@ -1164,9 +1165,9 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
     ctx.r6.u64 = 0;
     ctx.r7.u64 = tagID;
     ctx.r8.u64 = 0;
-    // r9 controls the variant/wildcard value during entity creation!
-    // 0 = default, 1-3 = wildcard traits, higher = color variants
-    ctx.r9.u64 = (variantIndex >= 0) ? static_cast<uint32_t>(variantIndex) : 0;
+    // r9 controls the wildcard TRAIT during entity creation (body features)
+    // 0 = none, 1-3 = different wildcard body traits (fangs, mane, etc.)
+    ctx.r9.u64 = static_cast<uint32_t>(wildcardTrait);
     ctx.f1.f64 = 1.0;
     ctx.f2.f64 = 0.0;
 

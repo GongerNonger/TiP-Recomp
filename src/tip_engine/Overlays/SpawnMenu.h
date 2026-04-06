@@ -11,7 +11,8 @@ constexpr uint32_t SPECIAL_AMBER_EVENT = 60000;
 struct SpawnRequest {
     bool pending = false;
     uint32_t tagID = 0;
-    int variantIndex = -1; // -1 = default, 0+ = specific color variant (wildcard)
+    int variantIndex = -1; // -1 = default, 1+ = color variant (from eat system)
+    int wildcardTrait = 0; // 0 = none, 1-3 = wildcard body traits
     int dinoColor = -1;    // -1 = default, 0=Blue, 1=Green, 2=Red, 3=Elite Neon
 };
 
