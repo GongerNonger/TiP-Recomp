@@ -708,7 +708,9 @@ PPC_EXTERN_IMPORT(__imp__rex_dbTextureInitTexture);
 std::ofstream g_TextureLog;
 bool g_TextureLogging = false;
 
-extern "C" PPC_FUNC(rex_dbTextureInitTexture) {
+// DISABLED — hook causes crash during texture init. Need different approach.
+// extern "C" PPC_FUNC(rex_dbTextureInitTexture_DISABLED) {
+extern "C" void rex_dbTextureInitTexture_DISABLED(PPCContext& ctx, uint8_t* base) {
     uint32_t texAddr = ctx.r3.u32;
 
     // Log texture init if logging is enabled
