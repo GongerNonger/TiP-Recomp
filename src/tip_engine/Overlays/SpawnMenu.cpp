@@ -13,7 +13,7 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
 
     if (!g_SpawnMenuOpen) return;
 
-    ImGui::SetNextWindowSize(ImVec2(420.0f, 520.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(480.0f, 750.0f), ImGuiCond_FirstUseEver);
 
     if (!ImGui::Begin("Pinata Vision Spawner", &g_SpawnMenuOpen, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
@@ -138,9 +138,27 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
     ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "Pinata Vision Barcode Inject:");
 
     static char barcodeHex[64] = "";
+
+    // Preset buttons for key barcodes (no manual typing needed!)
+    if (ImGui::Button("Elite Neon")) { strcpy(barcodeHex, "BF619A786BD25C9B"); }
+    ImGui::SameLine();
+    if (ImGui::Button("Dino Blue")) { strcpy(barcodeHex, "FD6198786BD25C9B"); }
+    ImGui::SameLine();
+    if (ImGui::Button("Dino Green")) { strcpy(barcodeHex, "8683F3F160A87698"); }
+    ImGui::SameLine();
+    if (ImGui::Button("Dino Red")) { strcpy(barcodeHex, "E0206B2A1A0EFE80"); }
+
+    if (ImGui::Button("Dino Egg")) { strcpy(barcodeHex, "96FEF696AB02C4A6"); }
+    ImGui::SameLine();
+    if (ImGui::Button("Place Dino")) { strcpy(barcodeHex, "F1706B7B6D69A38F"); }
+    ImGui::SameLine();
+    if (ImGui::Button("Dino Journal")) { strcpy(barcodeHex, "D6727936AF6BF6B4"); }
+
     ImGui::SetNextItemWidth(-80);
     ImGui::InputText("##barcode", barcodeHex, sizeof(barcodeHex));
     ImGui::SameLine();
+    bool canInject = !g_BarcodeInject.pending && !g_SpawnRequest.pending;
+    if (!canInject) ImGui::BeginDisabled();
     if (ImGui::Button("Inject", ImVec2(-1, 0))) {
         std::string hex = barcodeHex;
         if (hex.size() >= 16) {
@@ -157,6 +175,7 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
             Log("Enter a 16+ character hex barcode string", 5);
         }
     }
+    if (!canInject) ImGui::EndDisabled();
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Paste a PV barcode hex from barcodes.txt\nExamples:\nBF619A786BD25C9B = Elite Neon Choclodocus\nF1706B7B6D69A38F = Place Choclodocus\n96FEF696AB02C4A6 = Choclodocus Egg");
     }

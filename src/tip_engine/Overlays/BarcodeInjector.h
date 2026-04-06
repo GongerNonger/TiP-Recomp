@@ -109,11 +109,10 @@ inline std::vector<bool> unobfuscateRow(const std::string& rowHex) {
     // Step 1: Logical translation (reverse the tr/76543210EFABCD98/0-9A-F/ transform)
     std::string translated = rowHex;
     for (auto& c : translated) {
-        // Original: 0→7, 1→6, 2→5, 3→4, 4→3, 5→2, 6→1, 7→0, 8→E, 9→F, A→A, B→B, C→C, D→D, E→9, F→8
-        // Reverse:  0←7, 1←6, 2←5, 3←4, 4←3, 5←2, 6←1, 7←0, 8←F, 9←E, A←A, B←B, C←C, D←D, E←8, F←9
-        static const char revTable[] = "76543210FEDCBA98";
-        int v = hexVal(c);
-        c = "0123456789ABCDEF"[(int)hexVal(revTable[v])];
+        // Perl: tr/76543210EFABCD98/0-9A-F/
+        // Input hex → output hex: 0→7,1→6,...,7→0,8→F,9→E,A→A,B→B,C→C,D→D,E→8,F→9
+        static const uint8_t xlat[16] = {7,6,5,4,3,2,1,0,15,14,10,11,12,13,8,9};
+        c = "0123456789ABCDEF"[xlat[hexVal(c)]];
     }
 
     // Step 2: XOR with negate mask
@@ -134,9 +133,10 @@ inline std::vector<bool> unobfuscateRow(const std::string& rowHex) {
     }
 
     // Step 3: Unshuffle first 60 bits
+    // Perl: encoded_data .= substr($row, $shuffle[$index][$_], 1) — reads FROM shuffle position
     std::vector<bool> decoded(60, false);
     for (int i = 0; i < 60; i++) {
-        decoded[shuffle[index][i]] = allBits[i];
+        decoded[i] = allBits[shuffle[index][i]];
     }
 
     return decoded;
