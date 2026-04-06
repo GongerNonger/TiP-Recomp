@@ -129,18 +129,123 @@ void fps_hook() {
   // Process any pending spawn requests each frame
   spawnTick_hook();
 
-  // Process deferred variant application — write directly to curVariantColourIndex
-  if (g_DeferredVariant.framesRemaining > 0) {
-      g_DeferredVariant.framesRemaining--;
-      if (g_DeferredVariant.framesRemaining == 0 && g_DeferredVariant.entity != 0) {
+  // Process deferred texture dump — scan entity after it's fully initialized
+  if (g_DeferredDump.framesRemaining > 0) {
+      g_DeferredDump.framesRemaining--;
+      if (g_DeferredDump.framesRemaining == 0 && g_DeferredDump.entity != 0) {
           uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
-          uint32_t varAddr = g_DeferredVariant.entity; // this is the PPC address of curVariantColourIndex
-          uint8_t oldVal = *(membase + varAddr);
-          *(membase + varAddr) = static_cast<uint8_t>(g_DeferredVariant.variantIndex);
-          Log("Variant written: " + std::to_string(oldVal) + " -> " +
-              std::to_string(g_DeferredVariant.variantIndex) + " at 0x" +
-              std::to_string(varAddr), 3);
-          g_DeferredVariant.entity = 0;
+          uint32_t entityAddr = g_DeferredDump.entity;
+          std::ofstream dump("C:/Users/Administrator/Downloads/entity_dump.txt");
+          if (dump.is_open()) {
+              char buf[512];
+              snprintf(buf, 512, "Entity at PPC 0x%08X (tagID=%d) — DEFERRED SCAN (30 frames)\n\n", entityAddr, g_DeferredDump.tagID);
+              dump << buf;
+
+              // Read glModel pointer at entity+0x110 (known fixed offset)
+              uint32_t glModelAddr = std::byteswap(*(uint32_t*)(membase + entityAddr + 0x110));
+              snprintf(buf, 512, "Entity+0x110 = 0x%08X (glModel candidate)\n", glModelAddr);
+              dump << buf;
+
+              auto isValidPtr = [](uint32_t p) -> bool {
+                  return (p >= 0x40000000 && p < 0x50000000) || (p >= 0x80000000 && p < 0x8E000000);
+              };
+
+              if (isValidPtr(glModelAddr)) {
+                  uint32_t modelPtr = std::byteswap(*(uint32_t*)(membase + glModelAddr));
+                  snprintf(buf, 512, "model ptr: 0x%08X (valid=%d)\n\n", modelPtr, isValidPtr(modelPtr));
+                  dump << buf;
+
+                  // Dump raw sgInst region to find real offsets
+                  // sgInst starts at glModel+0x138
+                  uint32_t sgBase = glModelAddr + 0x138;
+                  snprintf(buf, 512, "=== sgInst raw dump at glModel+0x138 = PPC 0x%08X ===\n", sgBase);
+                  dump << buf;
+
+                  // Dump 512 bytes of sgInst looking for texture table and color indices
+                  for (int row = 0; row < 512; row += 16) {
+                      snprintf(buf, 512, "sgInst+%04X: ", row);
+                      dump << buf;
+                      for (int col = 0; col < 16; col++) {
+                          snprintf(buf, 512, "%02X ", *(membase + sgBase + row + col));
+                          dump << buf;
+                      }
+                      dump << " | ";
+                      // Also show as big-endian u32 values
+                      for (int col = 0; col < 16; col += 4) {
+                          uint32_t val = std::byteswap(*(uint32_t*)(membase + sgBase + row + col));
+                          if (isValidPtr(val)) {
+                              snprintf(buf, 512, "[PTR 0x%08X] ", val);
+                          } else if (val < 100) {
+                              snprintf(buf, 512, "[int %d] ", val);
+                          } else {
+                              snprintf(buf, 512, "[0x%08X] ", val);
+                          }
+                          dump << buf;
+                      }
+                      dump << std::endl;
+                  }
+
+                  // Search for texture names by following ALL valid pointers from sgInst
+                  dump << "\n=== Following all pointers looking for texture names ===" << std::endl;
+                  for (int off = 0; off < 512; off += 4) {
+                      uint32_t ptr = std::byteswap(*(uint32_t*)(membase + sgBase + off));
+                      if (!isValidPtr(ptr)) continue;
+
+                      // Check if ptr points to something with readable strings
+                      // Follow one level of indirection too
+                      for (int subOff = 0; subOff < 64; subOff += 4) {
+                          uint32_t subPtr = std::byteswap(*(uint32_t*)(membase + ptr + subOff));
+                          if (!isValidPtr(subPtr)) continue;
+
+                          const char* s = (const char*)(membase + subPtr);
+                          // Check if it looks like a texture name
+                          if (strncmp(s, "aid_", 4) == 0 || strncmp(s, "texture", 7) == 0 ||
+                              strncmp(s, "pinata", 6) == 0 || strncmp(s, "animal", 6) == 0) {
+                              snprintf(buf, 512, "  sgInst+0x%03X -> 0x%08X +0x%02X -> 0x%08X = \"%.80s\"\n",
+                                  off, ptr, subOff, subPtr, s);
+                              dump << buf;
+                          }
+                      }
+                  }
+
+                  // Search the dbModel_s (at 0x821DEC78) for texture references
+                  // This is in the static code/data region and contains model definitions
+                  dump << "\n=== Searching dbModel_s at 0x" << std::hex << modelPtr << " ===" << std::endl;
+                  if (isValidPtr(modelPtr)) {
+                      int foundCount = 0;
+                      for (int off = 0; off < 4096 && foundCount < 30; off += 4) {
+                          uint32_t ptr = std::byteswap(*(uint32_t*)(membase + modelPtr + off));
+                          if (!isValidPtr(ptr)) continue;
+                          const char* s = (const char*)(membase + ptr);
+                          if (s[0] >= 'a' && s[0] <= 'z' && s[1] >= 'a' && s[2] >= 'a' &&
+                              strnlen(s, 100) > 3 && strnlen(s, 100) < 90) {
+                              snprintf(buf, 512, "  model+0x%04X -> 0x%08X = \"%.80s\"\n", off, ptr, s);
+                              dump << buf;
+                              foundCount++;
+                          }
+                          // Also follow one more level
+                          if (isValidPtr(ptr)) {
+                              for (int sub = 0; sub < 64 && foundCount < 30; sub += 4) {
+                                  uint32_t subPtr = std::byteswap(*(uint32_t*)(membase + ptr + sub));
+                                  if (!isValidPtr(subPtr)) continue;
+                                  const char* ss = (const char*)(membase + subPtr);
+                                  if (strncmp(ss, "aid_", 4) == 0) {
+                                      snprintf(buf, 512, "  model+0x%04X -> +0x%02X -> 0x%08X = \"%.80s\"\n", off, sub, subPtr, ss);
+                                      dump << buf;
+                                      foundCount++;
+                                  }
+                              }
+                          }
+                      }
+                      if (foundCount == 0) dump << "  (no texture strings found in first 4KB)" << std::endl;
+                  }
+              } else {
+                  snprintf(buf, 512, "Entity+0x110 = 0x%08X — NOT a valid pointer\n", glModelAddr);
+                  dump << buf;
+              }
+              dump.close();
+          }
+          g_DeferredDump.entity = 0;
       }
   }
 
@@ -982,8 +1087,12 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
     if (spawnedEntity != 0) {
         Log("Spawned entity: " + std::to_string(spawnedEntity), 3);
 
-        // Phase 2: Search entity memory for glModel_s.sgInst.curVariantColourIndex
-        // and dump findings to file
+        // Queue deferred texture dump (30 frames later when entity is fully initialized)
+        g_DeferredDump.entity = spawnedEntity;
+        g_DeferredDump.tagID = tagID;
+        g_DeferredDump.framesRemaining = 30;
+
+        // Phase 2: Immediate scan (may not find glModel if not initialized yet)
         {
             uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
             std::ofstream dump("C:/Users/Administrator/Downloads/entity_dump.txt");
@@ -1007,14 +1116,13 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
                 dump << "=== Searching for glModel_s in entity memory ===" << std::endl;
                 bool found = false;
 
-                // Safe range: only scan first 1024 bytes and use conservative pointer checks
-                // PPC heap range is roughly 0x40000000-0x50000000, code range 0x82000000-0x83000000
+                // PPC address ranges: heap 0x40000000-0x50000000, code/data 0x82000000-0x8E000000
                 auto isValidPtr = [](uint32_t p) -> bool {
                     return (p >= 0x40000000 && p < 0x50000000) ||
-                           (p >= 0x82000000 && p < 0x8C000000);
+                           (p >= 0x80000000 && p < 0x8E000000);
                 };
 
-                for (int entityOff = 0; entityOff < 1024; entityOff += 4) {
+                for (int entityOff = 0; entityOff < 2048; entityOff += 4) {
                     uint32_t candidate = std::byteswap(*(uint32_t*)(membase + spawnedEntity + entityOff));
                     if (!isValidPtr(candidate)) continue;
 
@@ -1054,7 +1162,7 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
                         dump << buf;
                         found = true;
 
-                        // Also dump the switchStateArray (body parts) at glModel+204
+                        // Dump switchStateArray (body parts) at glModel+204
                         dump << "  switchStateArray: ";
                         for (int i = 0; i < 16; i++) {
                             snprintf(buf, 512, "%02X ", *(membase + candidate + 204 + i));
@@ -1067,6 +1175,34 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
                         int cdSize = (int)std::byteswap(*(uint32_t*)(membase + candidate + 0x138 + 300));
                         snprintf(buf, 512, "  colourDisplacementTable: 0x%08X (size=%d)\n", cdTable, cdSize);
                         dump << buf;
+
+                        // === PHASE 3: Dump texture table ===
+                        if (texTable != 0) {
+                            int texSize = (int)std::byteswap(*(uint32_t*)(membase + candidate + 0x138 + 280));
+                            snprintf(buf, 512, "\n  === TEXTURE TABLE at 0x%08X (size=%d) ===\n", texTable, texSize);
+                            dump << buf;
+
+                            // Each entry is scenegraphInstTextureTable_s:
+                            // PPC: {name_ptr(4), currentTexture_ptr(4), originalTexture_ptr(4)} = 12 bytes
+                            for (int ti = 0; ti < texSize && ti < 32; ti++) {
+                                uint32_t entryAddr = texTable + ti * 12;
+                                uint32_t namePtr = std::byteswap(*(uint32_t*)(membase + entryAddr));
+                                uint32_t curTexPtr = std::byteswap(*(uint32_t*)(membase + entryAddr + 4));
+                                uint32_t origTexPtr = std::byteswap(*(uint32_t*)(membase + entryAddr + 8));
+
+                                char texName[128] = "(null)";
+                                if (namePtr > 0x40000000 && namePtr < 0x8E000000) {
+                                    const char* n = (const char*)(membase + namePtr);
+                                    strncpy(texName, n, 127);
+                                }
+
+                                snprintf(buf, 512, "  [%2d] name=0x%08X cur=0x%08X orig=0x%08X \"%s\"\n",
+                                    ti, namePtr, curTexPtr, origTexPtr, texName);
+                                dump << buf;
+                            }
+                        } else {
+                            dump << "  textureTable is NULL\n";
+                        }
 
                         // Log the address but DON'T write yet — just discover
                         if (variantIndex >= 0) {

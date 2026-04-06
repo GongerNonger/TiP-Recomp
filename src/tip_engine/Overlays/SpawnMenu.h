@@ -33,6 +33,14 @@ struct DeferredVariant {
     int variantIndex = -1;
     int framesRemaining = 0;
 };
+
+// Deferred texture dump (entity needs time to fully initialize)
+struct DeferredTextureDump {
+    uint32_t entity = 0;
+    uint32_t tagID = 0;
+    int framesRemaining = 0;
+};
+inline DeferredTextureDump g_DeferredDump;
 inline DeferredVariant g_DeferredVariant;
 
 class SpawnMenuDialog : public rex::ui::ImGuiDialog {
