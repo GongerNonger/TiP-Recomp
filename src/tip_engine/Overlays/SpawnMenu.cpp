@@ -245,6 +245,8 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
                         scanResults = SavePatcher::scanSave(savePath);
                     }
                 }
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1,1,0,1), "(close game first!)");
             }
         }
     }

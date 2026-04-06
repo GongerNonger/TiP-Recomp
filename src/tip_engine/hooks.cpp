@@ -129,15 +129,17 @@ void fps_hook() {
   // Process any pending spawn requests each frame
   spawnTick_hook();
 
-  // Process deferred variant application
+  // Process deferred variant application — write directly to curVariantColourIndex
   if (g_DeferredVariant.framesRemaining > 0) {
       g_DeferredVariant.framesRemaining--;
       if (g_DeferredVariant.framesRemaining == 0 && g_DeferredVariant.entity != 0) {
-          Log("Applying variant " + std::to_string(g_DeferredVariant.variantIndex)
-              + " to entity " + std::to_string(g_DeferredVariant.entity), 3);
-          rex::GuestToHostFunction<void>(sub_825885B0,
-              g_DeferredVariant.entity,
-              static_cast<uint32_t>(g_DeferredVariant.variantIndex));
+          uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
+          uint32_t varAddr = g_DeferredVariant.entity; // this is the PPC address of curVariantColourIndex
+          uint8_t oldVal = *(membase + varAddr);
+          *(membase + varAddr) = static_cast<uint8_t>(g_DeferredVariant.variantIndex);
+          Log("Variant written: " + std::to_string(oldVal) + " -> " +
+              std::to_string(g_DeferredVariant.variantIndex) + " at 0x" +
+              std::to_string(varAddr), 3);
           g_DeferredVariant.entity = 0;
       }
   }
@@ -980,62 +982,118 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
     if (spawnedEntity != 0) {
         Log("Spawned entity: " + std::to_string(spawnedEntity), 3);
 
-        // Dump entity memory for analysis (especially for Choclodocus color hunting)
+        // Phase 2: Search entity memory for glModel_s.sgInst.curVariantColourIndex
+        // and dump findings to file
         {
             uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
             std::ofstream dump("C:/Users/Administrator/Downloads/entity_dump.txt");
             if (dump.is_open()) {
                 dump << "Entity at PPC 0x" << std::hex << spawnedEntity << " (tagID=" << std::dec << tagID << ")" << std::endl;
-                dump << "DinoColor setting: " << dinoColor << std::endl;
+                dump << "Variant setting: " << variantIndex << std::endl;
                 dump << std::endl;
 
-                // Dump first 2048 bytes as hex + ASCII
-                for (int row = 0; row < 2048; row += 16) {
-                    char line[200];
-                    snprintf(line, 200, "+%04X: ", row);
-                    dump << line;
-                    for (int col = 0; col < 16; col++) {
-                        uint8_t b = *(membase + spawnedEntity + row + col);
-                        snprintf(line, 200, "%02X ", b);
-                        dump << line;
-                    }
-                    dump << " | ";
-                    for (int col = 0; col < 16; col++) {
-                        uint8_t b = *(membase + spawnedEntity + row + col);
-                        dump << (char)((b >= 0x20 && b <= 0x7E) ? b : '.');
-                    }
-                    dump << std::endl;
-                }
+                // Search strategy: The entity contains a pointer to glModel_s somewhere.
+                // glModel_s has sgInst embedded at offset 0x138 (312).
+                // sgInst starts with a pointer to dbScenegraph_s.
+                // curVariantColourIndex is at sgInst+0x141 (321).
+                // So from glModel_s start: offset 0x138+0x141 = 0x279 (633).
 
-                // Follow key pointers and dump their contents
-                dump << std::endl << "=== Sub-object dumps ===" << std::endl;
-                for (int off = 0; off < 128; off += 4) {
-                    uint32_t ptr = std::byteswap(*(uint32_t*)(membase + spawnedEntity + off));
-                    if (ptr > 0x40000000 && ptr < 0xA0000000 && ptr != spawnedEntity) {
-                        char hdr[100];
-                        snprintf(hdr, 100, "\n--- Entity+0x%04X -> 0x%08X (256 bytes) ---", off, ptr);
-                        dump << hdr << std::endl;
-                        for (int row = 0; row < 256; row += 16) {
-                            char line[200];
-                            snprintf(line, 200, "  +%04X: ", row);
-                            dump << line;
-                            for (int col = 0; col < 16; col++) {
-                                uint8_t b = *(membase + ptr + row + col);
-                                snprintf(line, 200, "%02X ", b);
-                                dump << line;
-                            }
-                            dump << " | ";
-                            for (int col = 0; col < 16; col++) {
-                                uint8_t b = *(membase + ptr + row + col);
-                                dump << (char)((b >= 0x20 && b <= 0x7E) ? b : '.');
-                            }
-                            dump << std::endl;
+                // Scan entity memory for pointers, follow each one,
+                // check if it looks like a glModel_s by verifying:
+                //   [ptr+0] = valid pointer (model)
+                //   [ptr+0x138] = valid pointer (sgInst.sg -> dbScenegraph)
+                //   [ptr+0x138+0x141] = small byte (curVariantColourIndex)
+
+                dump << "=== Searching for glModel_s in entity memory ===" << std::endl;
+                bool found = false;
+
+                // Safe range: only scan first 1024 bytes and use conservative pointer checks
+                // PPC heap range is roughly 0x40000000-0x50000000, code range 0x82000000-0x83000000
+                auto isValidPtr = [](uint32_t p) -> bool {
+                    return (p >= 0x40000000 && p < 0x50000000) ||
+                           (p >= 0x82000000 && p < 0x8C000000);
+                };
+
+                for (int entityOff = 0; entityOff < 1024; entityOff += 4) {
+                    uint32_t candidate = std::byteswap(*(uint32_t*)(membase + spawnedEntity + entityOff));
+                    if (!isValidPtr(candidate)) continue;
+
+                    // Check if candidate looks like glModel_s
+                    uint32_t modelPtr = std::byteswap(*(uint32_t*)(membase + candidate));
+                    if (!isValidPtr(modelPtr)) continue;
+
+                    // sgInst.sg at [candidate+0x138] should be valid pointer
+                    uint32_t sgPtr = std::byteswap(*(uint32_t*)(membase + candidate + 0x138));
+                    if (!isValidPtr(sgPtr)) continue;
+
+                    // textureTable at sgInst+276 = [candidate+0x138+0x114]
+                    uint32_t texTable = std::byteswap(*(uint32_t*)(membase + candidate + 0x138 + 276));
+
+                    // Read the color indices
+                    uint8_t defaultIdx = *(membase + candidate + 0x138 + 319);
+                    uint8_t specialIdx = *(membase + candidate + 0x138 + 320);
+                    uint8_t variantIdx = *(membase + candidate + 0x138 + 321);
+
+                    // All three indices should be small (< 50)
+                    if (defaultIdx < 50 && specialIdx < 50 && variantIdx < 50) {
+                        char buf[512];
+                        snprintf(buf, 512,
+                            "FOUND glModel_s candidate!\n"
+                            "  Entity+0x%04X -> glModel at PPC 0x%08X\n"
+                            "  model ptr: 0x%08X\n"
+                            "  sgInst.sg: 0x%08X\n"
+                            "  textureTable: 0x%08X\n"
+                            "  defaultColourIndex: %d\n"
+                            "  specialAbilityColourIndex: %d\n"
+                            "  curVariantColourIndex: %d\n"
+                            "  === ADDRESS OF curVariantColourIndex: PPC 0x%08X ===\n",
+                            entityOff, candidate,
+                            modelPtr, sgPtr, texTable,
+                            defaultIdx, specialIdx, variantIdx,
+                            candidate + 0x138 + 321);
+                        dump << buf;
+                        found = true;
+
+                        // Also dump the switchStateArray (body parts) at glModel+204
+                        dump << "  switchStateArray: ";
+                        for (int i = 0; i < 16; i++) {
+                            snprintf(buf, 512, "%02X ", *(membase + candidate + 204 + i));
+                            dump << buf;
+                        }
+                        dump << std::endl;
+
+                        // Read colourDisplacementTable info
+                        uint32_t cdTable = std::byteswap(*(uint32_t*)(membase + candidate + 0x138 + 296));
+                        int cdSize = (int)std::byteswap(*(uint32_t*)(membase + candidate + 0x138 + 300));
+                        snprintf(buf, 512, "  colourDisplacementTable: 0x%08X (size=%d)\n", cdTable, cdSize);
+                        dump << buf;
+
+                        // Log the address but DON'T write yet — just discover
+                        if (variantIndex >= 0) {
+                            uint32_t varAddr = candidate + 0x138 + 321;
+                            snprintf(buf, 512, "  curVariantColourIndex address: PPC 0x%08X (SCAN ONLY - no write)\n", varAddr);
+                            dump << buf;
                         }
                     }
                 }
 
+                if (!found) {
+                    dump << "No glModel_s found in first 4096 bytes of entity" << std::endl;
+                    dump << std::endl << "=== Raw entity dump (first 512 bytes) ===" << std::endl;
+                    for (int row = 0; row < 512; row += 16) {
+                        char line[200];
+                        snprintf(line, 200, "+%04X: ", row);
+                        dump << line;
+                        for (int col = 0; col < 16; col++) {
+                            snprintf(line, 200, "%02X ", *(membase + spawnedEntity + row + col));
+                            dump << line;
+                        }
+                        dump << std::endl;
+                    }
+                }
+
                 dump.close();
-                Log("Entity memory dumped to entity_dump.txt", 3);
+                Log("Entity analysis saved to entity_dump.txt", 3);
             }
         }
 
