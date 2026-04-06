@@ -1,5 +1,6 @@
 #include "SpawnMenu.h"
 #include "BarcodeInjector.h"
+#include "SavePatcher.h"
 #include <tip_engine/hooks.h>
 #include "tip_engine/rex_macros.h"
 #include "tip_engine/Log.h"
@@ -186,6 +187,70 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
         if (preview.valid) {
             ImGui::TextWrapped("Decoded: %s", PVDecode::formatCommands(preview).c_str());
         }
+    }
+
+    // === Save Texture Patcher ===
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Save Texture Patcher:");
+
+    static std::vector<SavePatcher::TextureEntry> scanResults;
+    static std::string patchStatus;
+    static int selectedVariant = 0;
+
+    // Known variants for the dropdown
+    static const char* dinoVariants[] = {"pink", "blue", "green", "red", "elite"};
+    static const char* dragonVariants[] = {"dirt", "gold", "grass", "water", "snow", "sand"};
+
+    if (ImGui::Button("Scan Current Save", ImVec2(-1, 0))) {
+        auto savePath = SavePatcher::findSaveDir();
+        if (!savePath.empty()) {
+            scanResults = SavePatcher::scanSave(savePath);
+            patchStatus = "Found " + std::to_string(scanResults.size()) + " variant textures in save";
+        } else {
+            patchStatus = "No save found!";
+        }
+    }
+
+    if (!scanResults.empty()) {
+        // Group by species
+        std::map<std::string, std::string> speciesCurrentVariant;
+        for (auto& e : scanResults) {
+            speciesCurrentVariant[e.species] = e.variant;
+        }
+
+        for (auto& [species, currentVar] : speciesCurrentVariant) {
+            ImGui::Text("%s: current = %s", species.c_str(), currentVar.c_str());
+
+            const char** variants = nullptr;
+            int varCount = 0;
+
+            if (species.find("dinosaur") != std::string::npos) {
+                variants = dinoVariants; varCount = 5;
+            } else if (species.find("dragon") != std::string::npos) {
+                variants = dragonVariants; varCount = 6;
+            }
+
+            if (variants) {
+                std::string comboId = "##var_" + species;
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(80);
+                ImGui::Combo(comboId.c_str(), &selectedVariant, variants, varCount);
+                ImGui::SameLine();
+                std::string btnId = "Patch##" + species;
+                if (ImGui::Button(btnId.c_str())) {
+                    auto savePath = SavePatcher::findSaveDir();
+                    if (!savePath.empty()) {
+                        patchStatus = SavePatcher::patchSave(savePath, species, currentVar, variants[selectedVariant]);
+                        // Re-scan
+                        scanResults = SavePatcher::scanSave(savePath);
+                    }
+                }
+            }
+        }
+    }
+
+    if (!patchStatus.empty()) {
+        ImGui::TextWrapped("%s", patchStatus.c_str());
     }
 
     ImGui::Separator();
