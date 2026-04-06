@@ -208,36 +208,25 @@ void fps_hook() {
                       }
                   }
 
-                  // Search the dbModel_s (at 0x821DEC78) for texture references
-                  // This is in the static code/data region and contains model definitions
-                  dump << "\n=== Searching dbModel_s at 0x" << std::hex << modelPtr << " ===" << std::endl;
-                  if (isValidPtr(modelPtr)) {
-                      int foundCount = 0;
-                      for (int off = 0; off < 4096 && foundCount < 30; off += 4) {
-                          uint32_t ptr = std::byteswap(*(uint32_t*)(membase + modelPtr + off));
-                          if (!isValidPtr(ptr)) continue;
-                          const char* s = (const char*)(membase + ptr);
-                          if (s[0] >= 'a' && s[0] <= 'z' && s[1] >= 'a' && s[2] >= 'a' &&
-                              strnlen(s, 100) > 3 && strnlen(s, 100) < 90) {
-                              snprintf(buf, 512, "  model+0x%04X -> 0x%08X = \"%.80s\"\n", off, ptr, s);
-                              dump << buf;
-                              foundCount++;
-                          }
-                          // Also follow one more level
-                          if (isValidPtr(ptr)) {
-                              for (int sub = 0; sub < 64 && foundCount < 30; sub += 4) {
-                                  uint32_t subPtr = std::byteswap(*(uint32_t*)(membase + ptr + sub));
-                                  if (!isValidPtr(subPtr)) continue;
-                                  const char* ss = (const char*)(membase + subPtr);
-                                  if (strncmp(ss, "aid_", 4) == 0) {
-                                      snprintf(buf, 512, "  model+0x%04X -> +0x%02X -> 0x%08X = \"%.80s\"\n", off, sub, subPtr, ss);
-                                      dump << buf;
-                                      foundCount++;
-                                  }
+                  // === Option C: Search dbScenegraph for texture name pointers ===
+                  // SAFE: only dereference data-range pointers (0x82-0x8E), never heap
+                  uint32_t sgDataPtr = std::byteswap(*(uint32_t*)(membase + sgBase));
+                  dump << "\n=== Scanning dbScenegraph at 0x" << std::hex << sgDataPtr << std::dec << " ===" << std::endl;
+                  if (sgDataPtr >= 0x40000000 && sgDataPtr < 0x50000000) {
+                      int found = 0;
+                      // Scan dbScenegraph (heap object) for data-range string pointers only
+                      for (int off = 0; off < 512 && found < 20; off += 4) {
+                          uint32_t val = std::byteswap(*(uint32_t*)(membase + sgDataPtr + off));
+                          if (val >= 0x82000000 && val < 0x8E000000) {
+                              const char* s = (const char*)(membase + val);
+                              if (s[0] >= 0x20 && s[0] <= 0x7E && s[1] >= 0x20 && strnlen(s, 80) > 3) {
+                                  snprintf(buf, 512, "  sg+0x%03X -> 0x%08X = \"%.70s\"\n", off, val, s);
+                                  dump << buf;
+                                  found++;
                               }
                           }
                       }
-                      if (foundCount == 0) dump << "  (no texture strings found in first 4KB)" << std::endl;
+                      if (found == 0) dump << "  No strings found in dbScenegraph\n";
                   }
               } else {
                   snprintf(buf, 512, "Entity+0x110 = 0x%08X — NOT a valid pointer\n", glModelAddr);
@@ -1136,13 +1125,13 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
     if (spawnedEntity != 0) {
         Log("Spawned entity: " + std::to_string(spawnedEntity), 3);
 
-        // Queue deferred texture dump (30 frames later when entity is fully initialized)
-        g_DeferredDump.entity = spawnedEntity;
-        g_DeferredDump.tagID = tagID;
-        g_DeferredDump.framesRemaining = 30;
+        // DISABLED: All scanning disabled to test stability
+        // g_DeferredDump.entity = spawnedEntity;
+        // g_DeferredDump.tagID = tagID;
+        // g_DeferredDump.framesRemaining = 60;
 
-        // Phase 2: Immediate scan (may not find glModel if not initialized yet)
-        {
+        // DISABLED: Immediate scan was causing crashes
+        if (false) {
             uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
             std::ofstream dump("C:/Users/Administrator/Downloads/entity_dump.txt");
             if (dump.is_open()) {
