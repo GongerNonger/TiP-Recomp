@@ -1080,21 +1080,21 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
                 Log("Trick " + std::to_string(varIdx) + " applied!", 3);
             }
         } else {
-            // COLOR CHANGE: write variant index to entity+3636
-            // then set strategy state to 1093 at entity+2564
-            // This triggers the game's sparkle animation + texture swap
-            PPC_STORE_U32(entityAddr + 3636, std::byteswap(static_cast<uint32_t>(varIdx)));
-            PPC_STORE_U32(entityAddr + 2564, std::byteswap(static_cast<uint32_t>(1093)));
+            // COLOR CHANGE: try message 260 directly on the mature entity
+            // PV barcode values for Whirlm: 3=Variant3, 4=Variant2, 5=Variant1, 15=Black
+            PPCContext varCtx = ctx;
+            varCtx.r3.u64 = entityAddr;
+            varCtx.r4.u64 = static_cast<uint32_t>(varIdx);
+            sub_825885B0(varCtx, base);
 
             {
                 std::ofstream dbg("C:/Users/Administrator/Downloads/variant_debug.txt");
                 char buf[256];
-                snprintf(buf, 256, "COLOR CHANGE: entity=0x%08X variant=%d at +3636, state=1093 at +2564\n",
-                    entityAddr, varIdx);
+                snprintf(buf, 256, "MSG 260: entity=0x%08X variant=%d\n", entityAddr, varIdx);
                 dbg << buf;
                 dbg.close();
             }
-            Log("Color variant " + std::to_string(varIdx) + " triggered!", 3);
+            Log("Message 260 sent: variant=" + std::to_string(varIdx), 3);
         }
     }
 
