@@ -41,6 +41,14 @@ struct DeferredTextureDump {
     int framesRemaining = 0;
 };
 inline DeferredTextureDump g_DeferredDump;
+
+// Deferred variant change via eat system (needs game logic context)
+struct DeferredVariantChange {
+    uint32_t entity = 0;
+    int variantIndex = -1;
+    bool pending = false;
+};
+inline DeferredVariantChange g_DeferredVariantChange;
 inline DeferredVariant g_DeferredVariant;
 
 class SpawnMenuDialog : public rex::ui::ImGuiDialog {

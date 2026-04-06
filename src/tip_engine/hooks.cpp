@@ -772,6 +772,10 @@ PPC_EXTERN_IMPORT(sub_82546C50);  // Find piñata in garden by tag ID
 PPC_EXTERN_IMPORT(sub_82559420);  // Apply dino color (r3=entity, r4=color 0-3)
 PPC_EXTERN_IMPORT(sub_825597C0);  // Pre-color-change setup
 PPC_EXTERN_IMPORT(rex_gardenMainGetGarden_824E10D8); // Get garden data
+
+// Runtime variant change system (from eat→color change pipeline)
+PPC_EXTERN_IMPORT(sub_82382328);  // Set variant change target (speciesData, variantIdx, flag)
+PPC_EXTERN_IMPORT(sub_8242BE00);  // Reload textures for new variant
 // Event dispatch (used for Amber/Wishing Well event 9113)
 PPC_EXTERN_IMPORT(sub_8258ADC8);
 
@@ -1045,6 +1049,32 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
         Log("Species scan saved!", 5);
     }
 
+    // Process deferred variant change via eat system
+    if (g_DeferredVariantChange.pending && g_DeferredVariantChange.entity != 0) {
+        g_DeferredVariantChange.pending = false;
+        uint32_t entityAddr = g_DeferredVariantChange.entity;
+        int varIdx = g_DeferredVariantChange.variantIndex;
+        uint8_t* mb = rex::Runtime::instance()->memory()->virtual_membase();
+
+        // Read speciesData = entity[2416]
+        uint32_t speciesData = std::byteswap(*(uint32_t*)(mb + entityAddr + 2416));
+
+        if (speciesData > 0x40000000 && speciesData < 0x8E000000) {
+            PPCContext varCtx = ctx;
+
+            // Call sub_82382328(speciesData, variantIndex, 1) — set variant target
+            varCtx.r3.u64 = speciesData;
+            varCtx.r4.u64 = static_cast<uint32_t>(varIdx);
+            varCtx.r5.u64 = 1;
+            sub_82382328(varCtx, base);
+
+            Log("Eat-system variant applied! speciesData=0x" + std::to_string(speciesData) +
+                " variant=" + std::to_string(varIdx), 3);
+        } else {
+            Log("Variant failed: invalid speciesData at entity+2416", 5);
+        }
+    }
+
     // Check for pending spawn request
     if (!g_SpawnRequest.pending) return;
 
@@ -1147,6 +1177,15 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
 
     if (spawnedEntity != 0) {
         Log("Spawned entity: " + std::to_string(spawnedEntity), 3);
+
+        // Queue deferred variant change via eat system's own functions
+        // This applies the variant AFTER entity is fully initialized
+        if (variantIndex > 0) {
+            g_DeferredVariantChange.entity = spawnedEntity;
+            g_DeferredVariantChange.variantIndex = variantIndex;
+            g_DeferredVariantChange.pending = true;
+            Log("Variant " + std::to_string(variantIndex) + " queued for eat-system apply", 3);
+        }
 
         // DISABLED: All scanning disabled to test stability
         // g_DeferredDump.entity = spawnedEntity;
