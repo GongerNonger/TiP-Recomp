@@ -697,8 +697,29 @@ PPC_EXTERN_IMPORT(__imp__rex_dbTextureInitTexture);
 std::ofstream g_TextureLog;
 bool g_TextureLogging = false;
 
-// DISABLED — hook causes crash during texture init. Need different approach.
-// extern "C" PPC_FUNC(rex_dbTextureInitTexture_DISABLED) {
+// === Phase 3: File system hook for asset override ===
+PPC_EXTERN_IMPORT(__imp__rex_fsOpenFile);
+std::ofstream g_FileLog;
+bool g_FileLogging = false;
+
+extern "C" PPC_FUNC(rex_fsOpenFile) {
+    // r3 = file struct, r4 = filename ptr (PPC string)
+    uint32_t filenamePtr = ctx.r4.u32;
+    uint8_t* mb = rex::Runtime::instance()->memory()->virtual_membase();
+
+    if (g_FileLogging && g_FileLog.is_open() && filenamePtr > 0x40000000) {
+        const char* filename = (const char*)(mb + filenamePtr);
+        if (strnlen(filename, 200) > 3 && strnlen(filename, 200) < 200) {
+            g_FileLog << filename << "\n";
+            g_FileLog.flush();
+        }
+    }
+
+    // Call original
+    __imp__rex_fsOpenFile(ctx, base);
+}
+
+// DISABLED — texture init hook causes crash
 extern "C" void rex_dbTextureInitTexture_DISABLED(PPCContext& ctx, uint8_t* base) {
     uint32_t texAddr = ctx.r3.u32;
 
