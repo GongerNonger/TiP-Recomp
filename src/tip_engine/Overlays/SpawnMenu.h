@@ -20,6 +20,13 @@ inline bool g_SpawnMenuOpen = false;
 inline uint32_t g_LastSpawnedEntity = 0; // PPC address of last spawned entity
 inline bool g_ScanPending = false;
 
+// Barcode injection request
+struct BarcodeInjectRequest {
+    bool pending = false;
+    std::string hexString;
+};
+inline BarcodeInjectRequest g_BarcodeInject;
+
 // Deferred variant application (needs to wait a frame for entity to initialize)
 struct DeferredVariant {
     uint32_t entity = 0;

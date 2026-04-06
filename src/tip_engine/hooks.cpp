@@ -15,6 +15,7 @@
 #include "tip_engine/D3DTypes.h"
 #include "Overlays/DebugInfo.h"
 #include "Overlays/SpawnMenu.h"
+#include "Overlays/BarcodeInjector.h"
 
 #include "rex_macros.h"
 #include <fstream>
@@ -609,6 +610,100 @@ PPC_EXTERN_IMPORT(__imp__rex_gardenMainGetGardenScene_824E1120);
 extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
     // Call the original implementation
     __imp__rex_gardenMainGetGardenScene_824E1120(ctx, base);
+
+    // Process barcode injection if pending
+    if (g_BarcodeInject.pending) {
+        g_BarcodeInject.pending = false;
+        uint32_t gs = ctx.r3.u32;
+        if (gs == 0) { Log("Barcode inject: not in garden!", 5); }
+        else {
+            auto decoded = PVDecode::decode(g_BarcodeInject.hexString);
+            PPCContext saveInj = ctx;
+
+            for (auto& cmd : decoded.commands) {
+                switch (cmd.type) {
+                case PVDecode::CMD_PLACE_TAG: {
+                    Log("PV PlaceTag: spawning ID " + std::to_string(cmd.value), 3);
+                    ctx = saveInj;
+                    ctx.r3.u64 = cmd.value;
+                    sub_825A0818(ctx, base);
+                    if (ctx.r3.u32 > 44) {
+                        Log("PV PlaceTag: invalid species " + std::to_string(cmd.value), 5);
+                        ctx = saveInj;
+                        break;
+                    }
+                    ctx = saveInj;
+                    ctx.r3.u64 = gs;
+                    ctx.r4.u64 = 0;
+                    ctx.r5.u64 = 0;
+                    ctx.r6.u64 = 0;
+                    ctx.r7.u64 = cmd.value;
+                    ctx.r8.u64 = 0;
+                    ctx.r9.u64 = 0;
+                    ctx.f1.f64 = 1.0;
+                    ctx.f2.f64 = 0.0;
+                    sub_82575AB8(ctx, base);
+                    g_LastSpawnedEntity = ctx.r3.u32;
+                    if (g_LastSpawnedEntity != 0)
+                        Log("PV PlaceTag: entity " + std::to_string(g_LastSpawnedEntity), 3);
+                    else
+                        Log("PV PlaceTag: spawn failed", 5);
+                    break;
+                }
+                case PVDecode::CMD_SPARSE: {
+                    Log("PV Sparse: type=" + std::to_string(cmd.sparseType) +
+                        " data=" + std::to_string(cmd.sparseData), 3);
+                    if (g_LastSpawnedEntity != 0) {
+                        if (cmd.sparseType == 0x13) {
+                            uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
+                            *(membase + 0x83DBECB5) = static_cast<uint8_t>(cmd.sparseData);
+                            Log("PV Sparse: dino color = " + std::to_string(cmd.sparseData), 3);
+                        }
+                        ctx = saveInj;
+                        ctx.r3.u64 = g_LastSpawnedEntity;
+                        ctx.r4.u64 = cmd.sparseData;
+                        sub_825885B0(ctx, base);
+                        Log("PV Sparse: msg 260 sent", 3);
+                    } else {
+                        Log("PV Sparse: no entity!", 5);
+                    }
+                    break;
+                }
+                case PVDecode::CMD_VARIANT: {
+                    Log("PV Variant: " + std::to_string(cmd.value), 3);
+                    if (g_LastSpawnedEntity != 0) {
+                        ctx = saveInj;
+                        ctx.r3.u64 = g_LastSpawnedEntity;
+                        ctx.r4.u64 = cmd.value;
+                        sub_825885B0(ctx, base);
+                    }
+                    break;
+                }
+                case PVDecode::CMD_WILDCARD: {
+                    Log("PV Wildcard: trait=" + std::to_string(cmd.value), 3);
+                    if (g_LastSpawnedEntity != 0) {
+                        ctx = saveInj;
+                        ctx.r3.u64 = g_LastSpawnedEntity;
+                        ctx.r4.u64 = cmd.value;
+                        sub_825885B0(ctx, base);
+                    }
+                    break;
+                }
+                case PVDecode::CMD_TARGET_ID:
+                    Log("PV TargetID: " + std::to_string(cmd.value), 3);
+                    break;
+                case PVDecode::CMD_REUSE:
+                    Log("PV Reuse: entity " + std::to_string(g_LastSpawnedEntity), 3);
+                    break;
+                default: break;
+                }
+            }
+
+            ctx = saveInj;
+            ctx.r3.u32 = gs;
+            Log("Barcode injection complete!", 3);
+        }
+    }
 
     // Process species scan if pending (needs live PPC context)
     if (g_ScanPending) {

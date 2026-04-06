@@ -1,4 +1,5 @@
 #include "SpawnMenu.h"
+#include "BarcodeInjector.h"
 #include <tip_engine/hooks.h>
 #include "tip_engine/rex_macros.h"
 #include "tip_engine/Log.h"
@@ -132,7 +133,45 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
 
     if (!canSpawn) ImGui::EndDisabled();
 
-    // Scan species button - discovers all valid tag IDs and their names
+    // === Piñata Vision Barcode Injection ===
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "Pinata Vision Barcode Inject:");
+
+    static char barcodeHex[64] = "";
+    ImGui::SetNextItemWidth(-80);
+    ImGui::InputText("##barcode", barcodeHex, sizeof(barcodeHex));
+    ImGui::SameLine();
+    if (ImGui::Button("Inject", ImVec2(-1, 0))) {
+        std::string hex = barcodeHex;
+        if (hex.size() >= 16) {
+            // Decode and show what it is
+            auto decoded = PVDecode::decode(hex);
+            if (decoded.valid) {
+                Log("Barcode: " + PVDecode::formatCommands(decoded), 3);
+                g_BarcodeInject.hexString = hex;
+                g_BarcodeInject.pending = true;
+            } else {
+                Log("Decode error: " + decoded.error, 5);
+            }
+        } else {
+            Log("Enter a 16+ character hex barcode string", 5);
+        }
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Paste a PV barcode hex from barcodes.txt\nExamples:\nBF619A786BD25C9B = Elite Neon Choclodocus\nF1706B7B6D69A38F = Place Choclodocus\n96FEF696AB02C4A6 = Choclodocus Egg");
+    }
+
+    // Show decoded preview if there's text in the input
+    if (strlen(barcodeHex) >= 16) {
+        auto preview = PVDecode::decode(std::string(barcodeHex));
+        if (preview.valid) {
+            ImGui::TextWrapped("Decoded: %s", PVDecode::formatCommands(preview).c_str());
+        }
+    }
+
+    ImGui::Separator();
+
+    // Scan species button
     if (ImGui::Button("Scan All Species IDs (check log)", ImVec2(-1, 0))) {
         scanRequested = true;
     }
