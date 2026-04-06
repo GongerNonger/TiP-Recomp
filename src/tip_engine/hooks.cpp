@@ -780,11 +780,70 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
     if (spawnedEntity != 0) {
         Log("Spawned entity: " + std::to_string(spawnedEntity), 3);
 
+        // Dump entity memory for analysis (especially for Choclodocus color hunting)
+        {
+            uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
+            std::ofstream dump("C:/Users/Administrator/Downloads/entity_dump.txt");
+            if (dump.is_open()) {
+                dump << "Entity at PPC 0x" << std::hex << spawnedEntity << " (tagID=" << std::dec << tagID << ")" << std::endl;
+                dump << "DinoColor setting: " << dinoColor << std::endl;
+                dump << std::endl;
+
+                // Dump first 2048 bytes as hex + ASCII
+                for (int row = 0; row < 2048; row += 16) {
+                    char line[200];
+                    snprintf(line, 200, "+%04X: ", row);
+                    dump << line;
+                    for (int col = 0; col < 16; col++) {
+                        uint8_t b = *(membase + spawnedEntity + row + col);
+                        snprintf(line, 200, "%02X ", b);
+                        dump << line;
+                    }
+                    dump << " | ";
+                    for (int col = 0; col < 16; col++) {
+                        uint8_t b = *(membase + spawnedEntity + row + col);
+                        dump << (char)((b >= 0x20 && b <= 0x7E) ? b : '.');
+                    }
+                    dump << std::endl;
+                }
+
+                // Follow key pointers and dump their contents
+                dump << std::endl << "=== Sub-object dumps ===" << std::endl;
+                for (int off = 0; off < 128; off += 4) {
+                    uint32_t ptr = std::byteswap(*(uint32_t*)(membase + spawnedEntity + off));
+                    if (ptr > 0x40000000 && ptr < 0xA0000000 && ptr != spawnedEntity) {
+                        char hdr[100];
+                        snprintf(hdr, 100, "\n--- Entity+0x%04X -> 0x%08X (256 bytes) ---", off, ptr);
+                        dump << hdr << std::endl;
+                        for (int row = 0; row < 256; row += 16) {
+                            char line[200];
+                            snprintf(line, 200, "  +%04X: ", row);
+                            dump << line;
+                            for (int col = 0; col < 16; col++) {
+                                uint8_t b = *(membase + ptr + row + col);
+                                snprintf(line, 200, "%02X ", b);
+                                dump << line;
+                            }
+                            dump << " | ";
+                            for (int col = 0; col < 16; col++) {
+                                uint8_t b = *(membase + ptr + row + col);
+                                dump << (char)((b >= 0x20 && b <= 0x7E) ? b : '.');
+                            }
+                            dump << std::endl;
+                        }
+                    }
+                }
+
+                dump.close();
+                Log("Entity memory dumped to entity_dump.txt", 3);
+            }
+        }
+
         // Defer variant application by a few frames to let entity fully initialize
         if (variantIndex >= 0) {
             g_DeferredVariant.entity = spawnedEntity;
             g_DeferredVariant.variantIndex = variantIndex;
-            g_DeferredVariant.framesRemaining = 5; // wait 5 frames
+            g_DeferredVariant.framesRemaining = 5;
             Log("Variant " + std::to_string(variantIndex) + " queued (deferred)", 3);
         }
     } else {
