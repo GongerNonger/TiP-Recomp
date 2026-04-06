@@ -1134,7 +1134,9 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
     ctx.r6.u64 = 0;
     ctx.r7.u64 = tagID;
     ctx.r8.u64 = 0;
-    ctx.r9.u64 = 0;
+    // r9 controls the variant/wildcard value during entity creation!
+    // 0 = default, 1-3 = wildcard traits, higher = color variants
+    ctx.r9.u64 = (variantIndex >= 0) ? static_cast<uint32_t>(variantIndex) : 0;
     ctx.f1.f64 = 1.0;
     ctx.f2.f64 = 0.0;
 
