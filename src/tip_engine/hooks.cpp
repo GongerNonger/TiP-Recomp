@@ -689,7 +689,7 @@ bool skiplightingTwo_hook() {
 // sub_824CB6F8 is the store variant (sets store flag, used by shops).
 // ============================================================
 
-// The REAL entity creation function (not the cutscene trigger)
+// The REAL entity creation function (unmodified — variant injection during creation breaks AI)
 PPC_EXTERN_IMPORT(sub_82575AB8);
 
 // === Phase 3: Texture init hook ===
@@ -795,10 +795,20 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
             auto decoded = PVDecode::decode(g_BarcodeInject.hexString);
             PPCContext saveInj = ctx;
 
+            // Pre-scan commands to find variant/wildcard values BEFORE PlaceTag
+            uint32_t barcodeVariant = 0;
+            uint32_t barcodeWildcard = 0;
+            for (auto& pre : decoded.commands) {
+                if (pre.type == PVDecode::CMD_VARIANT) barcodeVariant = pre.value;
+                if (pre.type == PVDecode::CMD_WILDCARD) barcodeWildcard = pre.value;
+            }
+
             for (auto& cmd : decoded.commands) {
                 switch (cmd.type) {
                 case PVDecode::CMD_PLACE_TAG: {
-                    Log("PV PlaceTag: spawning ID " + std::to_string(cmd.value), 3);
+                    Log("PV PlaceTag: ID " + std::to_string(cmd.value) +
+                        " variant=" + std::to_string(barcodeVariant) +
+                        " wildcard=" + std::to_string(barcodeWildcard), 3);
                     ctx = saveInj;
                     ctx.r3.u64 = cmd.value;
                     sub_825A0818(ctx, base);
@@ -814,7 +824,8 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
                     ctx.r6.u64 = 0;
                     ctx.r7.u64 = cmd.value;
                     ctx.r8.u64 = 0;
-                    ctx.r9.u64 = 0;
+                    // Pass variant value via r9 at creation time!
+                    ctx.r9.u64 = barcodeVariant;
                     ctx.f1.f64 = 1.0;
                     ctx.f2.f64 = 0.0;
                     sub_82575AB8(ctx, base);
@@ -1051,6 +1062,12 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
 
     // Process deferred variant change via eat system
     if (g_DeferredVariantChange.pending && g_DeferredVariantChange.entity != 0) {
+        {
+            std::ofstream dbg("C:/Users/Administrator/Downloads/variant_debug.txt", std::ios::app);
+            dbg << "DEFERRED TRIGGERED! entity=0x" << std::hex << g_DeferredVariantChange.entity
+                << " variant=" << std::dec << g_DeferredVariantChange.variantIndex << std::endl;
+            dbg.close();
+        }
         g_DeferredVariantChange.pending = false;
         uint32_t entityAddr = g_DeferredVariantChange.entity;
         int varIdx = g_DeferredVariantChange.variantIndex;
@@ -1176,9 +1193,7 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
     ctx.r6.u64 = 0;
     ctx.r7.u64 = tagID;
     ctx.r8.u64 = 0;
-    // r9 controls the wildcard TRAIT during entity creation (body features)
-    // 0 = none, 1-3 = different wildcard body traits (fangs, mane, etc.)
-    ctx.r9.u64 = static_cast<uint32_t>(wildcardTrait);
+    ctx.r9.u64 = 0; // variant applied post-creation via eat system, not at spawn
     ctx.f1.f64 = 1.0;
     ctx.f2.f64 = 0.0;
 
@@ -1190,14 +1205,8 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
     if (spawnedEntity != 0) {
         Log("Spawned entity: " + std::to_string(spawnedEntity), 3);
 
-        // Queue deferred variant change via eat system's own functions
-        // This applies the variant AFTER entity is fully initialized
-        if (variantIndex > 0) {
-            g_DeferredVariantChange.entity = spawnedEntity;
-            g_DeferredVariantChange.variantIndex = variantIndex;
-            g_DeferredVariantChange.pending = true;
-            Log("Variant " + std::to_string(variantIndex) + " queued for eat-system apply", 3);
-        }
+        // Don't apply variant at spawn — entity AI breaks
+        // Variant must be applied after piñata matures (via "Apply Variant" button)
 
         // DISABLED: All scanning disabled to test stability
         // g_DeferredDump.entity = spawnedEntity;

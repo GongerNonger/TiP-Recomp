@@ -145,6 +145,19 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
 
     if (!canSpawn) ImGui::EndDisabled();
 
+    // Apply variant to last spawned entity (must be mature/resident first!)
+    if (g_LastSpawnedEntity != 0 && variantIndex > 0) {
+        if (ImGui::Button("Apply Variant to Last Spawned", ImVec2(-1, 0))) {
+            g_DeferredVariantChange.entity = g_LastSpawnedEntity;
+            g_DeferredVariantChange.variantIndex = variantIndex;
+            g_DeferredVariantChange.pending = true;
+            Log("Variant " + std::to_string(variantIndex) + " queued for entity", 3);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Wait until the pinata has matured (cocoon hatched)\nthen click this. Whirlm colors: 3,4,5. Black=15");
+        }
+    }
+
     // === Piñata Vision Barcode Injection ===
     ImGui::Separator();
     ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "Pinata Vision Barcode Inject:");
@@ -165,6 +178,12 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
     if (ImGui::Button("Place Dino")) { strcpy(barcodeHex, "F1706B7B6D69A38F"); }
     ImGui::SameLine();
     if (ImGui::Button("Dino Journal")) { strcpy(barcodeHex, "D6727936AF6BF6B4"); }
+
+    if (ImGui::Button("Whirlm V1")) { strcpy(barcodeHex, "E0F9EA0E1340F72E F029485B0255BC81"); }
+    ImGui::SameLine();
+    if (ImGui::Button("Whirlm V2")) { strcpy(barcodeHex, "A2CAE48E143A3CFA DBA2FC6A9CE00FDD"); }
+    ImGui::SameLine();
+    if (ImGui::Button("Whirlm V3")) { strcpy(barcodeHex, "E07B5AA20300DAE0 C47DC8832365804C"); }
 
     ImGui::SetNextItemWidth(-80);
     ImGui::InputText("##barcode", barcodeHex, sizeof(barcodeHex));
