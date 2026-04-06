@@ -1059,6 +1059,18 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
         // Read speciesData = entity[2416]
         uint32_t speciesData = std::byteswap(*(uint32_t*)(mb + entityAddr + 2416));
 
+        // Write debug to file
+        {
+            std::ofstream dbg("C:/Users/Administrator/Downloads/variant_debug.txt");
+            if (dbg.is_open()) {
+                char buf[256];
+                snprintf(buf, 256, "entity=0x%08X speciesData=0x%08X variant=%d\n",
+                    entityAddr, speciesData, varIdx);
+                dbg << buf;
+                dbg.close();
+            }
+        }
+
         if (speciesData > 0x40000000 && speciesData < 0x8E000000) {
             PPCContext varCtx = ctx;
 
@@ -1068,10 +1080,9 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
             varCtx.r5.u64 = 1;
             sub_82382328(varCtx, base);
 
-            Log("Eat-system variant applied! speciesData=0x" + std::to_string(speciesData) +
-                " variant=" + std::to_string(varIdx), 3);
+            Log("Eat-system variant applied!", 3);
         } else {
-            Log("Variant failed: invalid speciesData at entity+2416", 5);
+            Log("Variant failed: invalid speciesData", 5);
         }
     }
 
