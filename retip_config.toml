@@ -79,6 +79,10 @@ memcpy = 0x82AE1C70
 0x822cc598 = {name = "rex_cursorMainGetCursor_822CC598"}
 0x822e0938 = {name = "rex_cursorMarkerIsCarrying_822E0938"}
 
+#Spawn/Object Creation Functions
+0x824CB440 = {name = "rex_sceneObjCreate_824CB440"}
+0x824CB6F8 = {name = "rex_sceneObjCreateFromStore_824CB6F8"}
+
 #bugdet functions
 0x824DBE80 = {name = "rex_sub_824DBE80"}
 
@@ -439,3 +443,5 @@ name = "skiplightingTwo_hook"
 registers = []
 after_instruction = true
 jump_address_on_true = 0x825B9A58
+
+# Pinata Vision Spawn System - called from fps_hook() each frame (no separate midasm needed)

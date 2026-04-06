@@ -14,10 +14,17 @@
 #include "tip_engine/Log.h"
 #include "tip_engine/D3DTypes.h"
 #include "Overlays/DebugInfo.h"
+#include "Overlays/SpawnMenu.h"
 
 #include "rex_macros.h"
 #include <fstream>
 #include "tip_engine/Types/CommonTypes.h"
+
+// Forward declaration for spawn system
+void spawnTick_hook();
+
+// Message dispatch for variant/wildcard (used by deferred variant system)
+PPC_EXTERN_IMPORT(sub_825885B0);
 
 inline float to_byteswapped_float(float f) {
     uint32_t i = std::byteswap(*reinterpret_cast<uint32_t*>(&f));
@@ -118,6 +125,22 @@ int fpsHistoryIndex = 0;
 int fpsHistoryCount = 0;
 
 void fps_hook() {
+  // Process any pending spawn requests each frame
+  spawnTick_hook();
+
+  // Process deferred variant application
+  if (g_DeferredVariant.framesRemaining > 0) {
+      g_DeferredVariant.framesRemaining--;
+      if (g_DeferredVariant.framesRemaining == 0 && g_DeferredVariant.entity != 0) {
+          Log("Applying variant " + std::to_string(g_DeferredVariant.variantIndex)
+              + " to entity " + std::to_string(g_DeferredVariant.entity), 3);
+          rex::GuestToHostFunction<void>(sub_825885B0,
+              g_DeferredVariant.entity,
+              static_cast<uint32_t>(g_DeferredVariant.variantIndex));
+          g_DeferredVariant.entity = 0;
+      }
+  }
+
   frame++;
   auto Time = std::chrono::system_clock::now();
   std::chrono::duration<double, std::milli> delta = Time - frameTime;
@@ -549,4 +572,214 @@ bool skiplighting_hook() {
 
 bool skiplightingTwo_hook() {
   return false; // Always branch to loc_824DDA84
+}
+
+// ============================================================
+// Pinata Vision Spawn System
+// ============================================================
+//
+// sub_824CB440 is the PPC equivalent of the PC port's SpawnObject_93F220.
+// It's a thin wrapper around the core dispatcher sub_824CB760.
+//
+// Calling convention (from generated recomp analysis):
+//   r3 = 383          (scene dispatch message ID, constant)
+//   r4 = tagID        (supportPinataTag_e value = g_PinataIDs.ID)
+//   r5 = parentPtr    (entity/scene pointer, 0 for free spawn)
+//   r6 = 0            (flags)
+//   r7 = 0            (flags)
+//   r8 = 1            (spawn mode: 1 = normal)
+//
+// sub_824CB6F8 is the store variant (sets store flag, used by shops).
+// ============================================================
+
+// The REAL entity creation function (not the cutscene trigger)
+PPC_EXTERN_IMPORT(sub_82575AB8);
+// Species tag ID validator - returns type code (0-44 = valid, 46 = invalid)
+PPC_EXTERN_IMPORT(sub_825A0818);
+// Message dispatch: sends message 260 (set variant/wildcard color)
+PPC_EXTERN_IMPORT(sub_825885B0);
+// Event dispatch (used for Amber/Wishing Well event 9113)
+PPC_EXTERN_IMPORT(sub_8258ADC8);
+
+// Override gardenMainGetGardenScene — call original, then spawn if pending
+PPC_EXTERN_IMPORT(__imp__rex_gardenMainGetGardenScene_824E1120);
+
+extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
+    // Call the original implementation
+    __imp__rex_gardenMainGetGardenScene_824E1120(ctx, base);
+
+    // Check for pending spawn request
+    if (!g_SpawnRequest.pending) return;
+
+    uint32_t gardenScene = ctx.r3.u32;
+    if (gardenScene == 0) return; // Not in a garden
+
+    uint32_t tagID = g_SpawnRequest.tagID;
+    int variantIndex = g_SpawnRequest.variantIndex;
+    g_SpawnRequest.pending = false;
+
+    // Save the full context
+    PPCContext saveCtx = ctx;
+
+    // Handle special events (like Amber)
+    if (tagID == SPECIAL_AMBER_EVENT) {
+        Log("Triggering Amber event (9113)", 3);
+        ctx.r3.u64 = 9113;
+        ctx.r4.u64 = 1;
+        sub_8258ADC8(ctx, base);
+        ctx = saveCtx;
+        ctx.r3.u32 = gardenScene;
+        Log("Amber event triggered!", 3);
+        return;
+    }
+
+    Log("Spawning tag " + std::to_string(tagID) + " (scene=" + std::to_string(gardenScene) + ")", 3);
+
+    // Validate the tag ID before spawning
+    ctx.r3.u64 = tagID;
+    sub_825A0818(ctx, base);
+    uint32_t typeCode = ctx.r3.u32;
+    ctx = saveCtx; // restore context after validation call
+    saveCtx = ctx; // re-save clean context
+
+    if (typeCode > 44) {
+        Log("Invalid species tag " + std::to_string(tagID) + " (type=" + std::to_string(typeCode) + ") - not a valid pinata!", 5);
+        ctx.r3.u32 = gardenScene;
+        return;
+    }
+
+    Log("Valid species (type=" + std::to_string(typeCode) + "), spawning...", 3);
+
+    // Call sub_82575AB8 - the REAL entity creation function
+    ctx.r3.u64 = gardenScene;
+    ctx.r4.u64 = 0;
+    ctx.r5.u64 = 0;
+    ctx.r6.u64 = 0;
+    ctx.r7.u64 = tagID;
+    ctx.r8.u64 = 0;
+    ctx.r9.u64 = 0;
+    ctx.f1.f64 = 1.0;
+    ctx.f2.f64 = 0.0;
+
+    sub_82575AB8(ctx, base);
+
+    uint32_t spawnedEntity = ctx.r3.u32;
+    g_LastSpawnedEntity = spawnedEntity;
+
+    if (spawnedEntity != 0) {
+        Log("Spawned entity: " + std::to_string(spawnedEntity), 3);
+
+        // Defer variant application by a few frames to let entity fully initialize
+        if (variantIndex >= 0) {
+            g_DeferredVariant.entity = spawnedEntity;
+            g_DeferredVariant.variantIndex = variantIndex;
+            g_DeferredVariant.framesRemaining = 5; // wait 5 frames
+            Log("Variant " + std::to_string(variantIndex) + " queued (deferred)", 3);
+        }
+    } else {
+        Log("Spawn returned 0 - entity may not have been created", 5);
+    }
+
+    // Restore full context
+    ctx = saveCtx;
+    ctx.r3.u32 = gardenScene;
+}
+
+// Species name table pointer (PPC address) and format string
+// sub_82575578 uses: r31 = 0x82BA0000 + 15392 (name table), typeCode*4 indexes into it
+// sub_825A0878 converts typeCode back to tagID
+
+PPC_EXTERN_IMPORT(sub_825A0878);
+
+void scanSpeciesIDs() {
+    // Map tag IDs to their enum names from supportPinataTag_e
+    static const char* enumNames[] = {
+        /*0*/"aRTrigger", "aNull_0", "Animal_aaaaaa",
+        /*3*/"ant", "beetle", "badger", "bat", "bear", "beaver", "bee",
+        /*10*/"blackbutterfly", "bluebottle", "bluebutterfly", "boomslang",
+        /*14*/"brownbutterfly", "bushbaby", "buzzard", "spare90",
+        /*18*/"canary", "spare89", "cat", "chameleon", "chicken", "camel",
+        /*24*/"cow", "spare87", "crocodile", "crow", "deer", "spare86",
+        /*30*/"dog", "spare85", "dragon", "dragonfly", "duck", "spare84",
+        /*36*/"eagle", "spare83", "elephant", "firefly", "firesalamander", "spare81",
+        /*42*/"flyingpig", "fox", "frog", "gecko", "gerbil", "spare80",
+        /*48*/"spare79", "spare78", "spare76", "spare75", "goose", "spare74",
+        /*54*/"grasssnake", "greenbutterfly", "spare73", "spare72",
+        /*58*/"hedgehog", "hippo", "horse", "hyena", "hydra",
+        /*63*/"lemming", "lemmingpest", "spare67", "spare66", "spare65", "spare64",
+        /*69*/"lion", "spare63", "spare62", "spare61", "mandrill", "spare60",
+        /*75*/"mole", "spare59", "monkey", "moose", "moth", "mouse", "newt",
+        /*82*/"spare57", "orangebutterfly", "ostrich", "spare55", "spare54",
+        /*87*/"parrot", "polarbear", "penguin", "pig", "pigeon", "poisonfrog",
+        /*93*/"pinkbutterfly", "pony", "purplebutterfly", "rabbit", "raccoon",
+        /*98*/"spare50", "spare49", "redbutterfly", "spare48", "spare47",
+        /*103*/"robin", "spare45", "spare44", "salamander", "spare43",
+        /*108*/"sheep", "scorpion", "scorpionpest", "spare40",
+        /*112*/"sparrow", "spider", "squirrel", "spare39", "spare38", "spare37", "spare36",
+        /*119*/"swan", "spare35", "spare34", "spare33", "spare32", "spare31", "spare30",
+        /*126*/"unicorn", "batpest", "spare29", "vulture", "spare27",
+        /*131*/"whitebutterfly", "spare26", "wolf", "yeti", "worm", "yak",
+        /*137*/"yellowbutterfly", "zebra", "slugpest", "spare23", "spare22",
+        /*142*/"spare21", "spare20", "spare19", "spare18",
+        /*146*/"crowpest", "raccoonpest", "crocodilepest", "spare17",
+        /*150*/"molepest", "spare16", "spare15", "spare14", "spare13",
+        /*155*/"wolfpest", "mandrillpest", "spare12", "spare11",
+        /*159*/"snail", "snailpest", "graysquirrel", "spare3-9_start",
+        /*163*/"spare4", "spare5", "spare6", "spare7", "spare8", "spare9"
+    };
+
+    std::string outPath = "C:/Users/Administrator/Downloads/species_scan.txt";
+    std::ofstream outFile(outPath);
+    if (!outFile.is_open()) return;
+
+    outFile << "=== Species ID Scan (Enum Names) ===" << std::endl;
+    outFile << "ID | EnumName | CurrentListName | VPName (known)" << std::endl;
+    outFile << "---+----------+----------------+----------------" << std::endl;
+
+    for (uint32_t tagID = 3; tagID <= 170; tagID++) {
+        const char* enumName = (tagID < sizeof(enumNames)/sizeof(enumNames[0]))
+            ? enumNames[tagID] : "???";
+
+        // Find current list entry
+        const char* listName = "(not in list)";
+        for (auto& entry : g_PinataIDs) {
+            if (entry.ID == tagID) { listName = entry.Name; break; }
+        }
+
+        // Known VP name mappings (from confirmed entries)
+        const char* vpName = "";
+        // These are CONFIRMED mappings from g_PinataIDs
+        if (strstr(enumName, "spare") != nullptr) {
+            vpName = "<<< TiP EXCLUSIVE - NEEDS IDENTIFICATION >>>";
+        }
+
+        outFile << tagID << " | " << enumName << " | " << listName;
+        if (vpName[0]) outFile << " | " << vpName;
+        outFile << std::endl;
+    }
+
+    // Also list all TiP exclusive species we need to identify
+    outFile << std::endl << "=== TiP Exclusive Species (need mapping) ===" << std::endl;
+    outFile << "Known TiP species: Bispotti, Camello, Cherrapin, Chocstrich, Choclodocus," << std::endl;
+    outFile << "  Custacean, Flapyak, Geckie, Hoghurt, Hootyfruity, Limeoceros," << std::endl;
+    outFile << "  Moojoo, Parmadillo, Peckanmix, Pengum, Pieena, Polollybear," << std::endl;
+    outFile << "  Robean, S'morepion, Sarsgorilla, Smelba, Sweetle, Tartridge," << std::endl;
+    outFile << "  Tigermisu, Vulchurro, Walrusk, Lemmoning, Jeli, Flapjak" << std::endl;
+    outFile << std::endl;
+    outFile << "Spare slots that are TiP piñatas:" << std::endl;
+    for (uint32_t tagID = 3; tagID <= 170; tagID++) {
+        if (tagID < sizeof(enumNames)/sizeof(enumNames[0])) {
+            if (strstr(enumNames[tagID], "spare") != nullptr) {
+                outFile << "  ID " << tagID << " = " << enumNames[tagID] << std::endl;
+            }
+        }
+    }
+
+    outFile << std::endl << "=== Scan complete ===" << std::endl;
+    outFile.close();
+    Log("Species scan saved to " + outPath, 5);
+}
+
+void spawnTick_hook() {
+    // No-op: spawning happens via gardenMainGetGardenScene hook
 }

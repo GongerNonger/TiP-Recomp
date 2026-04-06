@@ -11,6 +11,7 @@
 #include "tip_engine/Log.h"
 #include "tip_engine/Overlays/Fps.h"
 #include "tip_engine/Overlays/DebugInfo.h"
+#include "tip_engine/Overlays/SpawnMenu.h"
 
 
 
@@ -32,6 +33,7 @@ class RetipApp : public rex::ReXApp {
   // void OnConfigurePaths(rex::PathConfig& paths) override {}
   void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {
         drawer->AddDialog(new FpsOverlayDialog(drawer));
+        drawer->AddDialog(new SpawnMenuDialog(drawer));
         //drawer->AddDialog(new DebugOverlayDialog(drawer));
     }
 };

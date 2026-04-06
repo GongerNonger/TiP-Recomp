@@ -17,6 +17,7 @@ set(RETIP_SOURCES
     src/main.cpp
     src/tip_engine/hooks.cpp
     src/tip_engine/Overlays/Fps.cpp
+    src/tip_engine/Overlays/SpawnMenu.cpp
     src/tip_engine/rex_macros.h
 )
 
