@@ -58,6 +58,18 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
         ImGui::SetTooltip("Set color variant. -1=Default, 0+=Wildcard variants.\nTry different values to discover hidden colors!");
     }
 
+    // Dino Color (Choclodocus/Dragonache special color)
+    static int dinoColor = -1;
+    static const char* dinoColorNames[] = {"Default", "Blue", "Green", "Red", "Elite Neon"};
+    ImGui::Text("Dino Color:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1);
+    ImGui::SliderInt("##dinocolor", &dinoColor, -1, 3,
+        (dinoColor >= 0 && dinoColor <= 3) ? dinoColorNames[dinoColor + 1] : dinoColorNames[0]);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Choclodocus/Dragonache color.\n-1=Default, 0=Blue, 1=Green, 2=Red, 3=Elite Neon");
+    }
+
     ImGui::Separator();
 
     // Item list
@@ -112,6 +124,7 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
     if (ImGui::Button("Spawn Selected", ImVec2(-1, 0))) {
         g_SpawnRequest.tagID = g_PinataIDs[selectedIndex].ID;
         g_SpawnRequest.variantIndex = variantIndex;
+        g_SpawnRequest.dinoColor = dinoColor;
         g_SpawnRequest.pending = true;
         Log("Spawn requested: " + std::string(g_PinataIDs[selectedIndex].Name)
             + (variantIndex >= 0 ? " (variant " + std::to_string(variantIndex) + ")" : ""), 3);

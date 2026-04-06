@@ -662,27 +662,37 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
                 };
                 const char* eName = (tagID < 169) ? enumNames168[tagID] : "???";
 
-                // If result is non-null, try to read data from it
+                // If result is non-null, dump struct contents to find name data
                 std::string info = "NULL";
                 if (result != 0) {
-                    // Try reading a few offsets to find name-like data
-                    info = "PTR=0x";
-                    char hex[16]; snprintf(hex, 16, "%08X", result); info += hex;
+                    info = "VALID";
+                    char hex[16];
 
-                    // Try offset 16 (what encyclopedia uses)
-                    uint32_t v16 = std::byteswap(*(uint32_t*)(mb + result + 16));
-                    snprintf(hex, 16, "%08X", v16); info += " [16]=0x"; info += hex;
-
-                    // Try reading a string at various offsets from the struct
-                    for (int off : {24, 28, 32, 36, 40, 44, 48, 52}) {
-                        uint32_t ptr = std::byteswap(*(uint32_t*)(mb + result + off));
-                        if (ptr > 0x82000000 && ptr < 0x90000000) {
-                            const char* s = (const char*)(mb + ptr);
-                            if (s[0] >= 0x20 && s[0] <= 0x7E && s[1] >= 0x20 && s[1] <= 0x7E) {
-                                char buf[80];
-                                snprintf(buf, 80, " [%d]=\"%.40s\"", off, s);
+                    // Dump first 128 bytes of the struct looking for strings and pointers
+                    for (int off = 0; off < 128; off += 4) {
+                        uint32_t val = std::byteswap(*(uint32_t*)(mb + result + off));
+                        // Check if it's a pointer to readable string
+                        if (val > 0x82000000 && val < 0xA0000000) {
+                            const char* s = (const char*)(mb + val);
+                            bool isStr = true;
+                            int strLen = 0;
+                            for (int i = 0; i < 40 && s[i]; i++) {
+                                if (s[i] < 0x20 || s[i] > 0x7E) { isStr = false; break; }
+                                strLen++;
+                            }
+                            if (isStr && strLen >= 3) {
+                                char buf[100];
+                                snprintf(buf, 100, " [%d]=\"%.50s\"", off, s);
                                 info += buf;
                             }
+                        }
+                        // Also check if the raw bytes look like inline ASCII
+                        const char* raw = (const char*)(mb + result + off);
+                        if (raw[0] >= 'A' && raw[0] <= 'z' && raw[1] >= 'a' && raw[1] <= 'z'
+                            && raw[2] >= 'a' && raw[2] <= 'z') {
+                            char buf[60];
+                            snprintf(buf, 60, " @%d=\"%.16s\"", off, raw);
+                            info += buf;
                         }
                     }
                 }
@@ -706,7 +716,18 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
 
     uint32_t tagID = g_SpawnRequest.tagID;
     int variantIndex = g_SpawnRequest.variantIndex;
+    int dinoColor = g_SpawnRequest.dinoColor;
     g_SpawnRequest.pending = false;
+
+    // Write dinosaur color to the global that Choclodocus/Dragonache reads during creation
+    // PPC address 0x83DBECB5 = the dinosaur color byte
+    // 0=Blue, 1=Green, 2=Red, 3=Elite Neon
+    if (dinoColor >= 0) {
+        uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
+        uint8_t* dinoColorPtr = membase + 0x83DBECB5;
+        *dinoColorPtr = static_cast<uint8_t>(dinoColor);
+        Log("Set dino color to " + std::to_string(dinoColor), 3);
+    }
 
     // Save the full context
     PPCContext saveCtx = ctx;

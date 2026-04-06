@@ -12,6 +12,7 @@ struct SpawnRequest {
     bool pending = false;
     uint32_t tagID = 0;
     int variantIndex = -1; // -1 = default, 0+ = specific color variant (wildcard)
+    int dinoColor = -1;    // -1 = default, 0=Blue, 1=Green, 2=Red, 3=Elite Neon
 };
 
 inline SpawnRequest g_SpawnRequest;
