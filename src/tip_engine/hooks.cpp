@@ -653,12 +653,35 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
                 case PVDecode::CMD_SPARSE: {
                     Log("PV Sparse: type=" + std::to_string(cmd.sparseType) +
                         " data=" + std::to_string(cmd.sparseData), 3);
-                    if (g_LastSpawnedEntity != 0) {
-                        if (cmd.sparseType == 0x13) {
-                            uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
-                            *(membase + 0x83DBECB5) = static_cast<uint8_t>(cmd.sparseData);
-                            Log("PV Sparse: dino color = " + std::to_string(cmd.sparseData), 3);
+                    if (cmd.sparseType == 0x13) {
+                        // Dino color: write to global AND garden controller
+                        uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
+                        *(membase + 0x83DBECB5) = static_cast<uint8_t>(cmd.sparseData);
+                        // Find garden controller
+                        uint32_t tableBase = 0x83D27000;
+                        for (int si = 0; si < 5; si++) {
+                            uint32_t slotAddr = tableBase + si * 504;
+                            uint32_t state = std::byteswap(*(uint32_t*)(membase + slotAddr + 16));
+                            if (state == 1) {
+                                uint32_t scenePtr = std::byteswap(*(uint32_t*)(membase + slotAddr + 4));
+                                for (int off = 0; off < 504; off += 4) {
+                                    uint32_t ptr = std::byteswap(*(uint32_t*)(membase + slotAddr + off));
+                                    if (ptr > 0x40000000 && ptr < 0xA0000000 && off != 4) {
+                                        uint32_t testScene = std::byteswap(*(uint32_t*)(membase + ptr + 248));
+                                        if (testScene == scenePtr) {
+                                            *(membase + ptr + 4864) = static_cast<uint8_t>(cmd.sparseData);
+                                            *(membase + ptr + 4865) = static_cast<uint8_t>(cmd.sparseData);
+                                            *(membase + ptr + 4866) = static_cast<uint8_t>(cmd.sparseData);
+                                            Log("PV Sparse: garden controller dino color = " + std::to_string(cmd.sparseData), 3);
+                                            break;
+                                        }
+                                    }
+                                }
+                                break;
+                            }
                         }
+                    }
+                    if (g_LastSpawnedEntity != 0) {
                         ctx = saveInj;
                         ctx.r3.u64 = g_LastSpawnedEntity;
                         ctx.r4.u64 = cmd.sparseData;
@@ -814,14 +837,43 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
     int dinoColor = g_SpawnRequest.dinoColor;
     g_SpawnRequest.pending = false;
 
-    // Write dinosaur color to the global that Choclodocus/Dragonache reads during creation
-    // PPC address 0x83DBECB5 = the dinosaur color byte
-    // 0=Blue, 1=Green, 2=Red, 3=Elite Neon
+    // Write dinosaur color to BOTH the global AND the garden controller
     if (dinoColor >= 0) {
         uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
-        uint8_t* dinoColorPtr = membase + 0x83DBECB5;
-        *dinoColorPtr = static_cast<uint8_t>(dinoColor);
-        Log("Set dino color to " + std::to_string(dinoColor), 3);
+
+        // Write to global
+        *(membase + 0x83DBECB5) = static_cast<uint8_t>(dinoColor);
+
+        // Find the garden controller by scanning the garden slot table
+        // Table at PPC 0x83D27000, 5 slots of 504 bytes each
+        // slot[16] = state (1=active), slot[4] = scene pointer
+        uint32_t tableBase = 0x83D27000;
+        for (int i = 0; i < 5; i++) {
+            uint32_t slotAddr = tableBase + i * 504;
+            uint32_t state = std::byteswap(*(uint32_t*)(membase + slotAddr + 16));
+            if (state == 1) {
+                uint32_t scenePtr = std::byteswap(*(uint32_t*)(membase + slotAddr + 4));
+                // The scene has the world at [18944], and the controller has scene at [248]
+                // Search nearby slot fields for the controller
+                for (int off = 0; off < 504; off += 4) {
+                    uint32_t ptr = std::byteswap(*(uint32_t*)(membase + slotAddr + off));
+                    if (ptr > 0x40000000 && ptr < 0xA0000000 && off != 4) {
+                        // Check if this pointer's [248] equals the scene
+                        uint32_t testScene = std::byteswap(*(uint32_t*)(membase + ptr + 248));
+                        if (testScene == scenePtr) {
+                            // Found the garden controller!
+                            *(membase + ptr + 4864) = static_cast<uint8_t>(dinoColor);
+                            *(membase + ptr + 4865) = static_cast<uint8_t>(dinoColor);
+                            *(membase + ptr + 4866) = static_cast<uint8_t>(dinoColor);
+                            Log("Garden controller at 0x" + std::to_string(ptr) +
+                                " - set dino color bytes to " + std::to_string(dinoColor), 3);
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+        }
     }
 
     // Save the full context
