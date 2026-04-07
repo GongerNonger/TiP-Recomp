@@ -949,8 +949,10 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
                     ctx.r6.u64 = 0;
                     ctx.r7.u64 = cmd.value;
                     ctx.r8.u64 = 0;
-                    // Pass variant value via r9 at creation time!
-                    ctx.r9.u64 = barcodeVariant;
+                    // Pass variant/wildcard value via r9 at creation time!
+                    // Wildcard barcodes use CMD_WILDCARD; variant barcodes use CMD_VARIANT
+                    // Both go through r9 — wildcard takes priority if present
+                    ctx.r9.u64 = barcodeWildcard > 0 ? barcodeWildcard : barcodeVariant;
                     ctx.f1.f64 = 1.0;
                     ctx.f2.f64 = 0.0;
                     sub_82575AB8(ctx, base);
@@ -1313,7 +1315,8 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
     ctx.r6.u64 = 0;
     ctx.r7.u64 = tagID;
     ctx.r8.u64 = 0;
-    ctx.r9.u64 = 0; // variant applied post-creation via eat system, not at spawn
+    // Pass wildcard trait via r9 at creation time (wildcards are innate, not post-spawn)
+    ctx.r9.u64 = wildcardTrait;
     ctx.f1.f64 = 1.0;
     ctx.f2.f64 = 0.0;
 
