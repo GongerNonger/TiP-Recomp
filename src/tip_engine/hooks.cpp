@@ -18,6 +18,7 @@
 #include "Overlays/BarcodeInjector.h"
 
 #include "rex_macros.h"
+#include <mutex>
 #include <fstream>
 #include "tip_engine/Types/CommonTypes.h"
 
@@ -719,8 +720,78 @@ extern "C" PPC_FUNC(rex_fsOpenFile) {
     __imp__rex_fsOpenFile(ctx, base);
 }
 
-// DISABLED — texture init hook causes crash
-extern "C" void rex_dbTextureInitTexture_DISABLED(PPCContext& ctx, uint8_t* base) {
+// === PHASE 3: Fixed Texture Init Hook ===
+// Previous crash was from memory probing. Fix: call original FIRST, then read only valid fields.
+// This is the same hook SolarCookies uses on the PC port for texture packs.
+
+// Asset name registry: captures names from rex_assetIdPrintf
+PPC_EXTERN_IMPORT(__imp__rex_assetIdPrintf);
+static std::string g_LastAssetName;
+static std::mutex g_AssetNameMutex;
+
+extern "C" PPC_FUNC(rex_assetIdPrintf) {
+    // Save r3 (output buffer address) before calling original
+    uint32_t outputBuf = ctx.r3.u32;
+
+    // Call original
+    __imp__rex_assetIdPrintf(ctx, base);
+
+    // Read the formatted string from the output buffer
+    if (outputBuf >= 0x40000000 && outputBuf < 0x8E000000) {
+        uint8_t* mb = rex::Runtime::instance()->memory()->virtual_membase();
+        const char* name = (const char*)(mb + outputBuf);
+        size_t len = strnlen(name, 100);
+        if (len > 10 && len < 90) {
+            if (strncmp(name, "aid_texture", 11) == 0) {
+                std::lock_guard<std::mutex> lock(g_AssetNameMutex);
+                g_LastAssetName = name;
+            }
+        }
+    }
+}
+
+// Texture init hook — safe version (calls original first)
+extern "C" PPC_FUNC(rex_dbTextureInitTexture) {
+    uint32_t texAddr = ctx.r3.u32;
+
+    // Call original FIRST — let it fully initialize the texture
+    __imp__rex_dbTextureInitTexture(ctx, base);
+
+    // Now the dbTexture_s is fully valid. Read ONLY known fields.
+    if (g_TextureLogging && g_TextureLog.is_open() && texAddr >= 0x40000000) {
+        uint8_t* mb = rex::Runtime::instance()->memory()->virtual_membase();
+
+        // Read dbTexture_s fields at known offsets
+        uint32_t format = std::byteswap(*(uint32_t*)(mb + texAddr + 0));
+        uint16_t width = std::byteswap(*(uint16_t*)(mb + texAddr + 8));
+        uint16_t height = std::byteswap(*(uint16_t*)(mb + texAddr + 10));
+        uint32_t imgData = std::byteswap(*(uint32_t*)(mb + texAddr + 20));
+        uint32_t imgSize = std::byteswap(*(uint32_t*)(mb + texAddr + 24));
+
+        // Get the last captured asset name
+        std::string assetName;
+        {
+            std::lock_guard<std::mutex> lock(g_AssetNameMutex);
+            assetName = g_LastAssetName;
+        }
+
+        static const char* fmtNames[] = {
+            "UNK", "DXT1", "DXT3", "DXT5", "A8R8G8B8", "X8R8G8B8",
+            "LIN_A8R8G8B8", "LIN_X8R8G8B8", "L8", "A8L8", "R5G6B5",
+            "A4R4G4B4", "DXN", "DXT3A", "G8R8"
+        };
+        const char* fmtName = (format < 15) ? fmtNames[format] : "???";
+
+        char buf[512];
+        snprintf(buf, 512, "TEX 0x%08X %4dx%-4d %-10s %8d bytes  data=0x%08X  %s\n",
+            texAddr, width, height, fmtName, imgSize, imgData, assetName.c_str());
+        g_TextureLog << buf;
+        g_TextureLog.flush();
+    }
+}
+
+// Keep old disabled version for reference
+extern "C" void rex_dbTextureInitTexture_OLD_DISABLED(PPCContext& ctx, uint8_t* base) {
     uint32_t texAddr = ctx.r3.u32;
 
     // Log texture init if logging is enabled
