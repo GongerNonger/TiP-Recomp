@@ -1,6 +1,7 @@
 #include "SpawnMenu.h"
 #include "BarcodeInjector.h"
 #include "SavePatcher.h"
+#include "tip_engine/TextureTools.h"
 #include <tip_engine/hooks.h>
 #include "tip_engine/rex_macros.h"
 #include "tip_engine/Log.h"
@@ -322,6 +323,32 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
             Log("Logging stopped — check texture_log.txt and file_log.txt", 3);
         }
     }
+
+    // === Texture Tools ===
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Texture Tools:");
+
+    // Capture toggle
+    if (ImGui::Button(TextureTools::g_CaptureEnabled ? "Stop Capture" : "Start Texture Capture", ImVec2(-1, 0))) {
+        TextureTools::g_CaptureEnabled = !TextureTools::g_CaptureEnabled;
+        if (TextureTools::g_CaptureEnabled) {
+            TextureTools::g_CapturedTextures.clear();
+            Log("Texture capture started (spawn a pinata!)", 3);
+        } else {
+            Log("Captured " + std::to_string(TextureTools::g_CapturedTextures.size()) + " textures", 3);
+        }
+    }
+
+    if (!TextureTools::g_CapturedTextures.empty()) {
+        ImGui::Text("Captured: %d textures", (int)TextureTools::g_CapturedTextures.size());
+        if (ImGui::Button("Dump All to mods/dump/", ImVec2(-1, 0))) {
+            uint8_t* mb = rex::Runtime::instance()->memory()->virtual_membase();
+            int count = TextureTools::dumpAllTextures("mods/dump", mb);
+            Log("Dumped " + std::to_string(count) + " textures to mods/dump/", 3);
+        }
+    }
+
+    ImGui::Separator();
 
     // Scan species button
     if (ImGui::Button("Scan All Species IDs (check log)", ImVec2(-1, 0))) {

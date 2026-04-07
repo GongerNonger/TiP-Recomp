@@ -19,6 +19,7 @@
 
 #include "rex_macros.h"
 #include <mutex>
+#include "TextureTools.h"
 #include <fstream>
 #include "tip_engine/Types/CommonTypes.h"
 
@@ -758,7 +759,7 @@ extern "C" PPC_FUNC(rex_dbTextureInitTexture) {
     __imp__rex_dbTextureInitTexture(ctx, base);
 
     // Now the dbTexture_s is fully valid. Read ONLY known fields.
-    if (g_TextureLogging && g_TextureLog.is_open() && texAddr >= 0x40000000) {
+    if ((g_TextureLogging || TextureTools::g_CaptureEnabled) && texAddr >= 0x40000000) {
         uint8_t* mb = rex::Runtime::instance()->memory()->virtual_membase();
 
         // Read dbTexture_s fields at known offsets
@@ -782,11 +783,27 @@ extern "C" PPC_FUNC(rex_dbTextureInitTexture) {
         };
         const char* fmtName = (format < 15) ? fmtNames[format] : "???";
 
-        char buf[512];
-        snprintf(buf, 512, "TEX 0x%08X %4dx%-4d %-10s %8d bytes  data=0x%08X  %s\n",
-            texAddr, width, height, fmtName, imgSize, imgData, assetName.c_str());
-        g_TextureLog << buf;
-        g_TextureLog.flush();
+        // Log to file if logging enabled
+        if (g_TextureLogging && g_TextureLog.is_open()) {
+            char buf[512];
+            snprintf(buf, 512, "TEX 0x%08X %4dx%-4d %-10s %8d bytes  data=0x%08X  %s\n",
+                texAddr, width, height, fmtName, imgSize, imgData, assetName.c_str());
+            g_TextureLog << buf;
+            g_TextureLog.flush();
+        }
+
+        // Capture texture for dump/override if capture enabled
+        if (TextureTools::g_CaptureEnabled && imgData > 0 && imgSize > 0) {
+            TextureTools::CapturedTexture cap;
+            cap.ppcAddr = texAddr;
+            cap.format = format;
+            cap.width = width;
+            cap.height = height;
+            cap.imageDataAddr = imgData;
+            cap.dataSize = imgSize;
+            cap.assetName = assetName;
+            TextureTools::g_CapturedTextures.push_back(cap);
+        }
     }
 }
 
