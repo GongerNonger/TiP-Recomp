@@ -203,6 +203,10 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
     ImGui::SameLine();
     if (ImGui::Button("Whirlm V3")) { strcpy(barcodeHex, "E07B5AA20300DAE0 C47DC8832365804C"); }
 
+    if (ImGui::Button("Amber Gem")) { strcpy(barcodeHex, "CB76D154B86F82E4"); }
+    ImGui::SameLine();
+    if (ImGui::Button("Wishing Well")) { strcpy(barcodeHex, "F1706A3BBC28538F"); }
+
     ImGui::SetNextItemWidth(-80);
     ImGui::InputText("##barcode", barcodeHex, sizeof(barcodeHex));
     ImGui::SameLine();

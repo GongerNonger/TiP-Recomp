@@ -140,6 +140,9 @@ inline static std::vector<PinataIDs> g_PinataIDs = {
     {723, "Dino Skull"},
     {724, "Dino Ribs"},
     {725, "Dino Spine"},
+    // === Special Items ===
+    {719, "Amber Gem"},
+    {798, "Wishing Well"},
     {171, "Crate1"},
     {172, "Crate (Xbox Live)"},
     {173, "Crate3"},
