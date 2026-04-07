@@ -304,17 +304,22 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
 
     ImGui::Separator();
 
-    // File access logging toggle
+    // Texture + File logging toggle (enables both hooks)
     extern std::ofstream g_FileLog;
     extern bool g_FileLogging;
-    if (ImGui::Button(g_FileLogging ? "Stop File Log" : "Start File Log", ImVec2(-1, 0))) {
+    extern std::ofstream g_TextureLog;
+    extern bool g_TextureLogging;
+    if (ImGui::Button(g_TextureLogging ? "Stop Logging" : "Start Texture + File Log", ImVec2(-1, 0))) {
         g_FileLogging = !g_FileLogging;
-        if (g_FileLogging) {
+        g_TextureLogging = !g_TextureLogging;
+        if (g_TextureLogging) {
             g_FileLog.open("C:/Users/Administrator/Downloads/file_log.txt", std::ios::trunc);
-            Log("File logging started", 3);
+            g_TextureLog.open("C:/Users/Administrator/Downloads/texture_log.txt", std::ios::trunc);
+            Log("Texture + file logging started", 3);
         } else {
             g_FileLog.close();
-            Log("File logging stopped — check file_log.txt", 3);
+            g_TextureLog.close();
+            Log("Logging stopped — check texture_log.txt and file_log.txt", 3);
         }
     }
 
