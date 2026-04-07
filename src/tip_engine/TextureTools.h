@@ -137,18 +137,18 @@ inline int dumpAllTextures(const std::string& dir, uint8_t* membase) {
     for (size_t i = 0; i < g_CapturedTextures.size(); i++) {
         auto& tex = g_CapturedTextures[i];
 
-        // Build filename from asset name or index
-        std::string filename;
+        // Build filename: index + dimensions + name (ensures unique files)
+        char prefix[64];
+        snprintf(prefix, 64, "%03zu_%dx%d", i, tex.width, tex.height);
+
+        std::string namePart;
         if (!tex.assetName.empty() && tex.assetName.find("aid_") == 0) {
-            filename = tex.assetName;
-            // Remove aid_ prefix for cleaner names
-            if (filename.substr(0, 4) == "aid_") filename = filename.substr(4);
+            namePart = tex.assetName.substr(4); // remove "aid_" prefix
         } else {
-            char buf[64];
-            snprintf(buf, 64, "texture_%04zu_%dx%d", i, tex.width, tex.height);
-            filename = buf;
+            namePart = "unknown";
         }
-        filename += ".dds";
+
+        std::string filename = std::string(prefix) + "_" + namePart + ".dds";
 
         std::string path = dir + "/" + filename;
         if (saveDDS(path, tex, membase)) {

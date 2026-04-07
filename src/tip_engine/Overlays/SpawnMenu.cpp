@@ -328,23 +328,27 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
     ImGui::Separator();
     ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Texture Tools:");
 
-    // Capture toggle
-    if (ImGui::Button(TextureTools::g_CaptureEnabled ? "Stop Capture" : "Start Texture Capture", ImVec2(-1, 0))) {
-        TextureTools::g_CaptureEnabled = !TextureTools::g_CaptureEnabled;
-        if (TextureTools::g_CaptureEnabled) {
+    // Combined capture + dump workflow
+    if (!TextureTools::g_CaptureEnabled) {
+        if (ImGui::Button("Start Texture Capture", ImVec2(-1, 0))) {
+            TextureTools::g_CaptureEnabled = true;
             TextureTools::g_CapturedTextures.clear();
-            Log("Texture capture started (spawn a pinata!)", 3);
-        } else {
-            Log("Captured " + std::to_string(TextureTools::g_CapturedTextures.size()) + " textures", 3);
+            // Also enable logging
+            g_TextureLogging = true;
+            g_TextureLog.open("C:/Users/Administrator/Downloads/texture_log.txt", std::ios::trunc);
         }
-    }
+    } else {
+        ImGui::TextColored(ImVec4(1,1,0,1), "CAPTURING... (%d textures so far)", (int)TextureTools::g_CapturedTextures.size());
+        if (ImGui::Button("Stop & Dump Textures", ImVec2(-1, 0))) {
+            TextureTools::g_CaptureEnabled = false;
+            g_TextureLogging = false;
+            g_TextureLog.close();
 
-    if (!TextureTools::g_CapturedTextures.empty()) {
-        ImGui::Text("Captured: %d textures", (int)TextureTools::g_CapturedTextures.size());
-        if (ImGui::Button("Dump All to mods/dump/", ImVec2(-1, 0))) {
+            // Dump immediately
             uint8_t* mb = rex::Runtime::instance()->memory()->virtual_membase();
-            int count = TextureTools::dumpAllTextures("mods/dump", mb);
-            Log("Dumped " + std::to_string(count) + " textures to mods/dump/", 3);
+            std::string dumpDir = "C:/Users/Administrator/Downloads/texture_dump";
+            int count = TextureTools::dumpAllTextures(dumpDir, mb);
+            Log("Dumped " + std::to_string(count) + " textures to Downloads/texture_dump/", 3);
         }
     }
 
