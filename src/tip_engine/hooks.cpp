@@ -751,9 +751,41 @@ extern "C" PPC_FUNC(rex_assetIdPrintf) {
     }
 }
 
+// Asset lookup hook: maps asset ID pointers to their resolved data pointers
+// sub_821D1C10 takes an asset ID (r3) and returns the data pointer
+// We capture the input asset ID name and map it to the returned pointer
+PPC_EXTERN_IMPORT(__imp__sub_821D1C10);
+static std::unordered_map<uint32_t, std::string> g_TextureAddrToName;
+
+extern "C" PPC_FUNC(sub_821D1C10) {
+    // r3 = asset ID struct pointer — the name string is at offset 0
+    uint32_t assetIdAddr = ctx.r3.u32;
+    std::string name;
+
+    if (assetIdAddr >= 0x40000000 && assetIdAddr < 0x8E000000) {
+        uint8_t* mb = rex::Runtime::instance()->memory()->virtual_membase();
+        const char* s = (const char*)(mb + assetIdAddr);
+        if (s[0] == 'a' && s[1] == 'i' && s[2] == 'd' && s[3] == '_') {
+            name = std::string(s, strnlen(s, 90));
+        }
+    }
+
+    // Call original
+    __imp__sub_821D1C10(ctx, base);
+
+    // Map the returned pointer to the asset name
+    if (!name.empty() && ctx.r3.u32 != 0) {
+        std::lock_guard<std::mutex> lock(g_AssetNameMutex);
+        g_TextureAddrToName[ctx.r3.u32] = name;
+    }
+}
+
 // Texture init hook — safe version (calls original first)
 extern "C" PPC_FUNC(rex_dbTextureInitTexture) {
     uint32_t texAddr = ctx.r3.u32;
+
+    // Name comes from g_TextureAddrToName map (populated by sub_821D1C10 hook)
+    // or falls back to g_LastAssetName from rex_assetIdPrintf
 
     // Call original FIRST — let it fully initialize the texture
     __imp__rex_dbTextureInitTexture(ctx, base);
@@ -769,11 +801,16 @@ extern "C" PPC_FUNC(rex_dbTextureInitTexture) {
         uint32_t imgData = std::byteswap(*(uint32_t*)(mb + texAddr + 20));
         uint32_t imgSize = std::byteswap(*(uint32_t*)(mb + texAddr + 24));
 
-        // Get the last captured asset name
+        // Get the asset name: first check the address map, then fall back to last captured
         std::string assetName;
         {
             std::lock_guard<std::mutex> lock(g_AssetNameMutex);
-            assetName = g_LastAssetName;
+            auto it = g_TextureAddrToName.find(texAddr);
+            if (it != g_TextureAddrToName.end()) {
+                assetName = it->second;
+            } else {
+                assetName = g_LastAssetName;
+            }
         }
 
         static const char* fmtNames[] = {
