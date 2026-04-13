@@ -6,3 +6,17 @@
 0x821F07E0 = {name = "rex_camMainGetPos_821F07E0"}
 0x821C8E78 = {name = "rex_appMainDraw_821C8E78"}
 0x821C91C0 = {name = "rex_appMainTickPreDraw_821C91C0"}
+
+# Piñata Vision Spawn System hooks
+0x824E1120 = {name = "rex_gardenMainGetGardenScene_824E1120"}
+0x824E10D8 = {name = "rex_gardenMainGetGarden_824E10D8"}
+0x821FC308 = {name = "rex_dbTextureInitTexture_821FC308"}
+0x821D17F0 = {name = "rex_assetIdPrintf_821D17F0"}
+0x82213A88 = {name = "rex_fsOpenFile_82213A88"}
+0x821D1C10 = {name = "rex_sub_821D1C10"}
+
+# Upstream aspect ratio hooks
+0x8228BE08 = {name = "rex_supportFrustumConstructClippingFrustum_8228BE08"}
+0x82247408 = {name = "rex_mlMtxPerspective_82247408"}
+0x821F0F30 = {name = "rex_meUpdateOutputViewport_821F0F30"}
+0x821F0910 = {name = "rex_camMainPostDrawLetterbox_821F0910"}

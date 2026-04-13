@@ -11,6 +11,7 @@
 #include "tip_engine/Log.h"
 #include "tip_engine/Overlays/Fps.h"
 #include "tip_engine/Overlays/DebugInfo.h"
+#include "tip_engine/Overlays/SpawnMenu.h"
 #include "ImPlot/implot.h"
 #include "Webcam.h"
 
@@ -41,7 +42,7 @@ class RetipApp : public rex::ReXApp {
         auto fpsDialog = new FpsOverlayDialog(drawer);
         fpsDialog->fpsManager = &fpsManager;
         drawer->AddDialog(fpsDialog);
-
+        drawer->AddDialog(new SpawnMenuDialog(drawer));
     }
 };
 

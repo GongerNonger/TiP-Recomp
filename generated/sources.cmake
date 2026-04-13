@@ -92,4 +92,5 @@ set(GENERATED_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/retip_recomp.81.cpp
     ${CMAKE_CURRENT_LIST_DIR}/retip_recomp.82.cpp
     ${CMAKE_CURRENT_LIST_DIR}/retip_recomp.83.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/retip_recomp.84.cpp
 )
