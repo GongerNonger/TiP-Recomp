@@ -65,6 +65,10 @@ PPC_EXTERN_IMPORT(sub_82382328);   // Set variant change target (speciesData, va
 PPC_EXTERN_IMPORT(sub_8242BE00);   // Reload textures for new variant
 PPC_EXTERN_IMPORT(sub_8258ADC8);   // Game event trigger
 PPC_EXTERN_IMPORT(sub_824145E8);   // Apply wildcard trait (breeding hook)
+PPC_EXTERN_IMPORT(sub_82559AD8);   // Dragonache: set all 5 body parts (entity, teeth, mane, wings, tail, ridges)
+PPC_EXTERN_IMPORT(sub_82559D88);   // Dragonache: set color from terrain type (entity, terrainType)
+PPC_EXTERN_IMPORT(sub_82559908);   // Dragonache: set single body part (entity, partIndex 1-5, variant)
+PPC_EXTERN_IMPORT(sub_82559E98);   // Dragonache: apply color (reads string from speciesData+2952, resolves texture)
 PPC_EXTERN_IMPORT(sub_825A0878);   // Convert typeCode back to tagID
 PPC_EXTERN_IMPORT(sub_8254C018);   // Asset ID builder (r3=tagID, r4=outputBuffer)
 // Cursor functions — declared as regular PPC functions (not hooked, just called)
@@ -868,20 +872,51 @@ extern "C" void rex_dbTextureInitTexture_OLD_DISABLED(PPCContext& ctx, uint8_t* 
 // (PPC_EXTERN_IMPORTs for spawn system declared at top of file)
 
 void wildcardHatchCheck(PPCContext& ctx, uint8_t* base) {
+    static const uint32_t traitValues[] = {10, 20, 21};
+
     // Log every call
     {
         std::ofstream hlog("C:/Users/Administrator/Downloads/wildcard_hook_log.txt", std::ios::app);
         hlog << "wildcardHatchCheck fired! r3=0x" << std::hex << ctx.r3.u32
              << " r4=" << std::dec << ctx.r4.u32
              << " ForceWildcard=" << g_ForceWildcard
+             << " AutoThird=" << g_AutoThirdWildcard
+             << " has=[" << g_HasTrait[0] << "," << g_HasTrait[1] << "," << g_HasTrait[2] << "]"
              << " trait=" << g_ForcedWildcardTrait << std::endl;
         hlog.close();
     }
 
+    if (g_AutoThirdWildcard) {
+        // Count how many traits the player has
+        int haveCount = 0;
+        int missingIdx = -1;
+        for (int i = 0; i < 3; i++) {
+            if (g_HasTrait[i]) haveCount++;
+            else missingIdx = i;
+        }
+
+        if (haveCount >= 2 && missingIdx >= 0) {
+            // Two traits present — force the missing third
+            uint32_t missingTrait = traitValues[missingIdx];
+            Log("WILDCARD AUTO-THIRD: Forcing trait " + std::to_string(missingIdx + 1) +
+                " (value=" + std::to_string(missingTrait) + ") — the missing one!", 3);
+            ctx.r4.u64 = missingTrait;
+            sub_824145E8(ctx, base);
+            g_HasTrait[missingIdx] = true; // now we have all three
+            return;
+        }
+        // Less than 2 traits — fall through to normal force wildcard
+    }
+
     if (g_ForceWildcard) {
-        Log("WILDCARD: Forcing trait " + std::to_string(g_ForcedWildcardTrait) + " on hatch!", 3);
-        ctx.r4.u64 = static_cast<uint32_t>(g_ForcedWildcardTrait);
+        uint32_t traitVal = traitValues[g_ForcedWildcardTrait % 3];
+        Log("WILDCARD: Forcing trait " + std::to_string(g_ForcedWildcardTrait) +
+            " (value=" + std::to_string(traitVal) + ") on hatch!", 3);
+        ctx.r4.u64 = traitVal;
         sub_824145E8(ctx, base);
+
+        // Track this trait for Auto Third
+        g_HasTrait[g_ForcedWildcardTrait % 3] = true;
     }
 }
 
@@ -1336,6 +1371,58 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
         ctx.r3.u32 = gs; // restore
     }
 
+    // Process deferred Dragonache customization
+    if (g_DeferredDragonache.pending && g_DeferredDragonache.framesRemaining > 0) {
+        g_DeferredDragonache.framesRemaining--;
+        Log("Dragonache deferred: " + std::to_string(g_DeferredDragonache.framesRemaining) +
+            " frames left, entity=0x" + std::to_string(g_DeferredDragonache.entity), 3);
+        if (g_DeferredDragonache.framesRemaining == 0) {
+            g_DeferredDragonache.pending = false;
+            uint32_t entity = g_DeferredDragonache.entity;
+            if (entity != 0) {
+                uint8_t* membase = rex::Runtime::instance()->memory()->virtual_membase();
+                PPCContext dCtx = ctx;
+
+                // Check if this is an egg (tag 211) or adult (tag 32)
+                // For eggs: write preset data into eggData so the game applies
+                // body parts naturally at hatch time
+                // For adults: call body part functions directly
+
+                // Try to read species data to check if egg
+                // Apply body parts directly via game functions
+                // (Egg preset injection needs r22 base which is the garden controller,
+                // not the entity — that requires more research. For now, spawn adult
+                // or hatch egg naturally and apply parts after.)
+                if (g_DeferredDragonache.color >= 0) {
+                    dCtx = ctx;
+                    dCtx.r3.u64 = entity;
+                    dCtx.r4.u64 = static_cast<uint32_t>(g_DeferredDragonache.color);
+                    sub_82559D88(dCtx, base);
+                    dCtx = ctx;
+                    dCtx.r3.u64 = entity;
+                    sub_82559E98(dCtx, base);
+                    Log("Dragonache color applied", 3);
+                }
+
+                auto setPart = [&](int partIdx, int val) {
+                    if (val >= 0) {
+                        dCtx = ctx;
+                        dCtx.r3.u64 = entity;
+                        dCtx.r4.u64 = static_cast<uint32_t>(partIdx);
+                        dCtx.r5.u64 = static_cast<uint32_t>(val);
+                        sub_82559908(dCtx, base);
+                    }
+                };
+                setPart(1, g_DeferredDragonache.teeth);
+                setPart(2, g_DeferredDragonache.mane);
+                setPart(3, g_DeferredDragonache.wings);
+                setPart(4, g_DeferredDragonache.tail);
+                setPart(5, g_DeferredDragonache.ridges);
+                Log("Dragonache body parts applied!", 3);
+            }
+        }
+    }
+
     // Process deferred variant/trick change
     if (g_DeferredVariantChange.pending && g_DeferredVariantChange.entity != 0) {
         g_DeferredVariantChange.pending = false;
@@ -1506,6 +1593,11 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
 
     uint32_t spawnedEntity = ctx.r3.u32;
     g_LastSpawnedEntity = spawnedEntity;
+
+    // Set entity on pending Dragonache customization
+    if (g_DeferredDragonache.pending && spawnedEntity != 0) {
+        g_DeferredDragonache.entity = spawnedEntity;
+    }
 
     if (spawnedEntity != 0) {
         Log("Spawned entity: " + std::to_string(spawnedEntity), 3);

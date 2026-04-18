@@ -85,6 +85,25 @@ inline DeferredWildcard g_DeferredWildcard;
 inline bool g_ForceWildcard = false;
 inline int g_ForcedWildcardTrait = 0; // 0, 1, or 2 → maps to wildcard traits 1, 2, 3
 
+// Auto Third Wildcard — breeds the missing trait from two existing wildcards
+// Trait values: 10 = trait 1, 20 = trait 2, 21 = trait 3
+// Dragonache customization — applied after spawn (deferred)
+struct DeferredDragonache {
+    uint32_t entity = 0;
+    int color = -1;     // -1 = don't set, 0-5 = terrain color
+    int teeth = -1;     // -1 = random, 0-3 = variant
+    int mane = -1;
+    int wings = -1;
+    int tail = -1;
+    int ridges = -1;
+    int framesRemaining = 0;
+    bool pending = false;
+};
+inline DeferredDragonache g_DeferredDragonache;
+
+inline bool g_AutoThirdWildcard = false;
+inline bool g_HasTrait[3] = {false, false, false}; // which traits the player has (0=trait1, 1=trait2, 2=trait3)
+
 class SpawnMenuDialog : public rex::ui::ImGuiDialog {
 public:
     explicit SpawnMenuDialog(rex::ui::ImGuiDrawer* drawer)

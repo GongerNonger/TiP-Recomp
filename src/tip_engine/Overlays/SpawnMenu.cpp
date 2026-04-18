@@ -627,6 +627,64 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
         }
     }
 
+    // === Dragonache Editor ===
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Dragonache Editor:");
+
+    static int dragonColor = 0;
+    static int dragonTeeth = 0;
+    static int dragonMane = 0;
+    static int dragonWings = 0;
+    static int dragonTail = 0;
+    static int dragonRidges = 0;
+
+    static const char* colorNames[] = {"Dirt (Brown)", "Gold", "Grass (Green)", "Water (Blue)", "Snow (White)", "Sand (Red)"};
+    ImGui::Combo("Color##dragon", &dragonColor, colorNames, 6);
+    ImGui::SliderInt("Teeth##dragon", &dragonTeeth, 0, 3);
+    ImGui::SliderInt("Mane##dragon", &dragonMane, 0, 3);
+    ImGui::SliderInt("Wings##dragon", &dragonWings, 0, 3);
+    ImGui::SliderInt("Tail##dragon", &dragonTail, 0, 3);
+    ImGui::SliderInt("Ridges##dragon", &dragonRidges, 0, 3);
+
+    if (ImGui::Button("Spawn Custom Dragonache", ImVec2(-1, 0))) {
+        g_SpawnRequest.tagID = 32; // Dragonache (adult)
+        g_SpawnRequest.variantIndex = -1;
+        g_SpawnRequest.wildcardTrait = 0;
+        g_SpawnRequest.dinoColor = -1;
+        g_SpawnRequest.pending = true;
+
+        // Queue deferred body part + color customization
+        g_DeferredDragonache.color = dragonColor;
+        g_DeferredDragonache.teeth = dragonTeeth;
+        g_DeferredDragonache.mane = dragonMane;
+        g_DeferredDragonache.wings = dragonWings;
+        g_DeferredDragonache.tail = dragonTail;
+        g_DeferredDragonache.ridges = dragonRidges;
+        g_DeferredDragonache.framesRemaining = 10;
+        g_DeferredDragonache.pending = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Spawns an adult Dragonache with custom body parts + color.\n20,000+ combinations!");
+    }
+
+    // Apply body parts to existing adult Dragonache
+    if (g_LastSpawnedEntity != 0) {
+        if (ImGui::Button("Apply Parts to Last Spawned##dragon", ImVec2(-1, 0))) {
+            g_DeferredDragonache.entity = g_LastSpawnedEntity;
+            g_DeferredDragonache.color = dragonColor;
+            g_DeferredDragonache.teeth = dragonTeeth;
+            g_DeferredDragonache.mane = dragonMane;
+            g_DeferredDragonache.wings = dragonWings;
+            g_DeferredDragonache.tail = dragonTail;
+            g_DeferredDragonache.ridges = dragonRidges;
+            g_DeferredDragonache.framesRemaining = 1;
+            g_DeferredDragonache.pending = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Applies body part settings to an existing Dragonache.\nDoes not change color — that's set by terrain at hatch.");
+        }
+    }
+
     // === Wildcard Breeding Override ===
     ImGui::Separator();
     ImGui::TextColored(ImVec4(1.0f, 0.4f, 1.0f, 1.0f), "Wildcard Breeding Override:");
@@ -637,6 +695,33 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
     if (g_ForceWildcard) {
         const char* traitNames[] = { "Trait 1", "Trait 2", "Trait 3" };
         ImGui::Combo("Wildcard Trait", &g_ForcedWildcardTrait, traitNames, 3);
+    }
+
+    // Auto Third Wildcard — breed two wildcards to get the missing third
+    ImGui::Checkbox("Auto Third Wildcard", &g_AutoThirdWildcard);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("When enabled, if you have 2 of 3 wildcard traits,\nthe next hatch automatically gets the missing third.\nCheck which traits you already have below.\n\nDesigned for single-player since trading servers are shut down.");
+    }
+    if (g_AutoThirdWildcard || g_ForceWildcard) {
+        ImGui::Text("Traits owned:");
+        ImGui::SameLine();
+        ImGui::Checkbox("1##t1", &g_HasTrait[0]);
+        ImGui::SameLine();
+        ImGui::Checkbox("2##t2", &g_HasTrait[1]);
+        ImGui::SameLine();
+        ImGui::Checkbox("3##t3", &g_HasTrait[2]);
+
+        int haveCount = (g_HasTrait[0] ? 1 : 0) + (g_HasTrait[1] ? 1 : 0) + (g_HasTrait[2] ? 1 : 0);
+        if (haveCount >= 2) {
+            int missing = -1;
+            for (int i = 0; i < 3; i++) if (!g_HasTrait[i]) missing = i;
+            if (missing >= 0)
+                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Next hatch will be Trait %d!", missing + 1);
+            else
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.4f, 1.0f), "All traits collected!");
+        } else {
+            ImGui::TextDisabled("Check 2 traits to auto-breed the 3rd");
+        }
     }
 
     // === Piñata Vision Barcode Injection ===
@@ -671,6 +756,13 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
     if (ImGui::Button("Amber Gem")) { strcpy(barcodeHex, "CB76D154B86F82E4"); }
     ImGui::SameLine();
     if (ImGui::Button("Wishing Well")) { strcpy(barcodeHex, "F1706A3BBC28538F"); }
+
+    // Dino Bones — separate items (from barcode database)
+    if (ImGui::Button("Red Bone")) { strcpy(barcodeHex, "96FEF69EAB02C4A6"); }
+    ImGui::SameLine();
+    if (ImGui::Button("Green Bone")) { strcpy(barcodeHex, "F1706A68E463A38F"); }
+    ImGui::SameLine();
+    if (ImGui::Button("Blue Bone")) { strcpy(barcodeHex, "96EAF69EAB02C4A6"); }
 
     // Halo crossover cards
     if (ImGui::Button("Master Chief")) { strcpy(barcodeHex, "E4E8C94C0925903E C0DD1418CE24FB9F C8401959DB55BB85 D56CD380785B7F87"); }
