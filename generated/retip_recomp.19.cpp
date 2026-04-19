@@ -51820,7 +51820,7 @@ loc_82414C9C:
 	ctx.r3.u64 = ctx.r31.u64;
 	// bl 0x824144f8 — PATCHED: wildcard breeding hook
 	ctx.lr = 0x82414CA8;
-	if (g_ForceWildcard) { wildcardHatchCheck(ctx, base); }
+	if (g_ForceWildcard || g_AutoThirdWildcard) { wildcardHatchCheck(ctx, base); }
 	else { sub_824144F8(ctx, base); }
 	// li r5,1
 	ctx.r5.s64 = 1;

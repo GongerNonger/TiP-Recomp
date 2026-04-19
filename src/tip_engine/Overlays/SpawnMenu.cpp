@@ -677,11 +677,12 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
             g_DeferredDragonache.wings = dragonWings;
             g_DeferredDragonache.tail = dragonTail;
             g_DeferredDragonache.ridges = dragonRidges;
-            g_DeferredDragonache.framesRemaining = 1;
+            g_DeferredDragonache.framesRemaining = 5;
             g_DeferredDragonache.pending = true;
+            Log("Dragonache apply queued for entity 0x" + std::to_string(g_LastSpawnedEntity), 3);
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Applies body part settings to an existing Dragonache.\nDoes not change color — that's set by terrain at hatch.");
+            ImGui::SetTooltip("Applies body parts + color to an existing Dragonache.");
         }
     }
 
@@ -757,12 +758,19 @@ void SpawnMenuDialog::OnDraw(ImGuiIO& io) {
     ImGui::SameLine();
     if (ImGui::Button("Wishing Well")) { strcpy(barcodeHex, "F1706A3BBC28538F"); }
 
-    // Dino Bones — separate items (from barcode database)
+    // Dino Parts (from barcode database)
+    // Bones have separate red/green/blue IDs (720/721/722)
     if (ImGui::Button("Red Bone")) { strcpy(barcodeHex, "96FEF69EAB02C4A6"); }
     ImGui::SameLine();
     if (ImGui::Button("Green Bone")) { strcpy(barcodeHex, "F1706A68E463A38F"); }
     ImGui::SameLine();
     if (ImGui::Button("Blue Bone")) { strcpy(barcodeHex, "96EAF69EAB02C4A6"); }
+    // Skull, Ribs, Spine — single IDs (723/724/725), color from dino color global
+    if (ImGui::Button("Skull")) { strcpy(barcodeHex, "F1706A68E562A38F"); }
+    ImGui::SameLine();
+    if (ImGui::Button("Ribs")) { strcpy(barcodeHex, "DBEFF156B97F92E4"); }
+    ImGui::SameLine();
+    if (ImGui::Button("Spine")) { strcpy(barcodeHex, "D76190A05CEC843B"); }
 
     // Halo crossover cards
     if (ImGui::Button("Master Chief")) { strcpy(barcodeHex, "E4E8C94C0925903E C0DD1418CE24FB9F C8401959DB55BB85 D56CD380785B7F87"); }

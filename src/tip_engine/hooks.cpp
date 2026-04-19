@@ -69,6 +69,7 @@ PPC_EXTERN_IMPORT(sub_82559AD8);   // Dragonache: set all 5 body parts (entity, 
 PPC_EXTERN_IMPORT(sub_82559D88);   // Dragonache: set color from terrain type (entity, terrainType)
 PPC_EXTERN_IMPORT(sub_82559908);   // Dragonache: set single body part (entity, partIndex 1-5, variant)
 PPC_EXTERN_IMPORT(sub_82559E98);   // Dragonache: apply color (reads string from speciesData+2952, resolves texture)
+PPC_EXTERN_IMPORT(sub_824CB440);   // sceneObjCreate — spawns items/produce/props (r3=383, r4=tagID, r5=0, r6=0, r7=0, r8=1)
 PPC_EXTERN_IMPORT(sub_825A0878);   // Convert typeCode back to tagID
 PPC_EXTERN_IMPORT(sub_8254C018);   // Asset ID builder (r3=tagID, r4=outputBuffer)
 // Cursor functions — declared as regular PPC functions (not hooked, just called)
@@ -977,10 +978,6 @@ extern "C" PPC_FUNC(rex_gardenMainGetGardenScene_824E1120) {
                         plog.flush();
 
                         // Accessory item IDs (> 1660) — TEMPORARILY SKIPPED.
-                        // Previous experiment called sub_82575AB8 with r3=0 which crashed.
-                        // The real accessory spawn path needs more research. For now, log
-                        // and skip so compound spawns like Master Chief still land the base
-                        // pinata and subsequent Variant/Name commands.
                         if (cmd.value > 1660) {
                             plog << "Accessory PlaceTag: item_id=" << cmd.value << " — SKIPPED (spawn path not yet implemented)" << std::endl;
                             plog.close();
